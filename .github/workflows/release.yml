@@ -1,0 +1,44 @@
+name: Publish CARLEONE HELPER
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, for example 1.0.0 or 1.0.1'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3
+      - name: Run tests
+        run: python -m unittest discover -p "test_*.py"
+      - name: Build and verify Windows distribution
+        run: python launcher/build_portable.py --version "$env:RELEASE_VERSION" --repository "$env:GITHUB_REPOSITORY"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          CARLEONE HELPER $env:RELEASE_VERSION
+
+          Download CARLEONE-HELPER-Windows-$env:RELEASE_VERSION.zip, extract the entire folder and launch CARLEONE HELPER.exe.
+          Existing installations check for updates on startup and when clicking the refresh button.
+          "@
+          $notes | Set-Content -LiteralPath release-notes.txt -Encoding utf8
+          gh release create "v$env:RELEASE_VERSION" "releases/$env:RELEASE_VERSION/CARLEONE-HELPER-Windows-$env:RELEASE_VERSION.zip" "releases/$env:RELEASE_VERSION/carleone-helper-$env:RELEASE_VERSION.zip" "releases/$env:RELEASE_VERSION/latest.json" --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title "CARLEONE HELPER $env:RELEASE_VERSION" --notes-file release-notes.txt --latest
