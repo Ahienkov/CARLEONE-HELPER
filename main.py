@@ -1380,11 +1380,6 @@ class CarleoneWindow(QMainWindow):
 
 
 if __name__ == "__main__":
-    # Also covers existing portable EXEs receiving this main.py through an
-    # automatic source update; their embedded entry point cannot be replaced.
-    from elevation import ensure_administrator
-    if not ensure_administrator():
-        raise SystemExit(0)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 

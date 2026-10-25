@@ -32,9 +32,6 @@ def main():
             (ROOT / 'self-test-error.txt').write_text(traceback.format_exc(), encoding='utf-8')
             raise SystemExit(1)
         raise SystemExit(0)
-    from elevation import ensure_administrator
-    if not ensure_administrator():
-        return
     try:
         updater = importlib.import_module('software_update')
         updater.apply_pending(ROOT)

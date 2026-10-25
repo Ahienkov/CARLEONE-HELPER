@@ -13,7 +13,7 @@ def build(version, repository):
     url = f'https://github.com/{repository}/releases/download/v{version}/carleone-helper-{version}.zip'
     update_zip, manifest = build_release(ROOT, url, version)
     subprocess.run([
-        sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--windowed', '--uac-admin',
+        sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--windowed',
         '--name', 'GTA 5 RP HELPER', '--icon', str(ROOT / 'assets/app-icon.ico'),
         '--distpath', str(ROOT / 'build/portable'), '--workpath', str(ROOT / 'build/pyinstaller'),
         '--specpath', str(ROOT / 'build'), str(ROOT / 'bootstrap.py'),
