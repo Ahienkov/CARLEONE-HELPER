@@ -59,7 +59,12 @@ class ForumUpdates(QObject):
         self.update_label()
         if not self.started and QApplication.platformName() != "offscreen":
             self.started = True
-            self.start_timer.start(2000)
+            if getattr(window, 'preferences', {}).get('check_on_startup', True):
+                self.start_timer.start(2000)
+            else:
+                self.text = 'Форум: локальная база'
+                self.detail = 'Проверка при запуске отключена. Проверить обновления можно кнопкой ↻.'
+                self.update_label()
 
     def update_label(self):
         window = self.window()
@@ -85,7 +90,7 @@ class ForumUpdates(QObject):
         application = {}
         try:
             try:
-                self.safe_progress('Проверка версии CARLEONE HELPER')
+                self.safe_progress('Проверка версии GTA 5 RP HELPER')
                 application = check_for_update()
             except Exception as error:
                 application = {'state': 'error', 'detail': str(error)}

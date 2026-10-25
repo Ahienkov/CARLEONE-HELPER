@@ -71,11 +71,11 @@ class RulesTests(unittest.TestCase):
         try:
             w.mode_group.button(1).click()
             self.assertGreater(len(w.current_records()), 0)
-            w.server.setCurrentIndex(1)
+            w.server.setCurrentIndex(w.server.findData('empty'))
             self.assertEqual(w.current_records(), [])
             self.assertEqual(w.topic.count(), 1)
             self.assertIn('Empty', w.results_layout.itemAt(0).widget().text())
-            w.server.setCurrentIndex(0)
+            w.server.setCurrentIndex(w.server.findData('murrieta'))
             self.assertGreater(len(w.current_records()), 0)
         finally:
             w.close()

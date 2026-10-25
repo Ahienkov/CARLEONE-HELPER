@@ -16,9 +16,9 @@ internal static class Program
             string main = Path.Combine(root, "main.py");
             string bootstrap = Path.Combine(root, "bootstrap.py");
             if (!File.Exists(python))
-                throw new FileNotFoundException("Не найден Python приложения. Папка .venv должна находиться рядом с CARLEONE HELPER.exe.");
+                throw new FileNotFoundException("Не найден Python приложения. Папка .venv должна находиться рядом с GTA 5 RP HELPER.exe.");
             if (!File.Exists(main))
-                throw new FileNotFoundException("Не найден main.py. Файлы программы должны находиться рядом с CARLEONE HELPER.exe.");
+                throw new FileNotFoundException("Не найден main.py. Файлы программы должны находиться рядом с GTA 5 RP HELPER.exe.");
             if (checkOnly)
                 return 0;
 
@@ -40,7 +40,7 @@ internal static class Program
         catch (Exception error)
         {
             if (!checkOnly)
-                MessageBox.Show(error.Message, "CARLEONE HELPER", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(error.Message, "GTA 5 RP HELPER", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }

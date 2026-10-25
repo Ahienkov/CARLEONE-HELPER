@@ -14,17 +14,17 @@ def build(version, repository):
     update_zip, manifest = build_release(ROOT, url, version)
     subprocess.run([
         sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--windowed',
-        '--name', 'CARLEONE HELPER', '--icon', str(ROOT / 'assets/app-icon.ico'),
+        '--name', 'GTA 5 RP HELPER', '--icon', str(ROOT / 'assets/app-icon.ico'),
         '--distpath', str(ROOT / 'build/portable'), '--workpath', str(ROOT / 'build/pyinstaller'),
         '--specpath', str(ROOT / 'build'), str(ROOT / 'bootstrap.py'),
     ], cwd=ROOT, check=True)
-    application = ROOT / 'build/portable/CARLEONE HELPER'
+    application = ROOT / 'build/portable/GTA 5 RP HELPER'
     with zipfile.ZipFile(update_zip) as package:
         package.extractall(application)
     environment = dict(os.environ, QT_QPA_PLATFORM='offscreen')
-    subprocess.run([str(application / 'CARLEONE HELPER.exe'), '--self-test'],
+    subprocess.run([str(application / 'GTA 5 RP HELPER.exe'), '--self-test'],
                    cwd=application, env=environment, check=True, timeout=60)
-    portable_zip = update_zip.parent / f'CARLEONE-HELPER-Windows-{version}.zip'
+    portable_zip = update_zip.parent / f'GTA-5-RP-HELPER-Windows-{version}.zip'
     with zipfile.ZipFile(portable_zip, 'w', compression=zipfile.ZIP_DEFLATED) as package:
         for path in sorted(application.rglob('*')):
             if path.is_file() and '__pycache__' not in path.parts:

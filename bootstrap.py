@@ -40,7 +40,7 @@ def main():
             path.unlink(missing_ok=True)
     except Exception as error:
         if sys.platform == 'win32':
-            ctypes.windll.user32.MessageBoxW(None, f'Обновление не применено. Будет запущена сохранённая версия.\n{error}', 'CARLEONE HELPER', 0x30)
+            ctypes.windll.user32.MessageBoxW(None, f'Обновление не применено. Будет запущена сохранённая версия.\n{error}', 'GTA 5 RP HELPER', 0x30)
     runpy.run_path(str(ROOT / 'main.py'), run_name='__main__')
 
 
