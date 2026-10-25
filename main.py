@@ -856,8 +856,9 @@ class CarleoneWindow(QMainWindow):
         self.resize_grip.setVisible(not self.isMaximized())
         self.left_resize_grip.setVisible(not self.isMaximized())
 
-    def toggle_from_hotkey(self):
-        if self.isVisible() and not self.isMinimized() and self.isActiveWindow():
+    def toggle_from_hotkey(self, foreground=None):
+        active = self.isActiveWindow() if foreground is None else foreground
+        if self.isVisible() and not self.isMinimized() and active:
             self.hide()
             return
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)

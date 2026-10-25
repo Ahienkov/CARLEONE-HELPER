@@ -22,6 +22,7 @@ class HotkeyTests(unittest.TestCase):
         self.previous = getattr(self.app, 'window_hotkey', None)
         self.api = Mock()
         self.api.RegisterHotKey.return_value = True
+        self.api.GetForegroundWindow.return_value = 0
         self.manager = WindowHotkey(self.app, api=self.api)
         self.app.window_hotkey = self.manager
         self.window = CarleoneWindow()
@@ -77,6 +78,85 @@ class HotkeyTests(unittest.TestCase):
         self.api.RegisterHotKey.return_value = False
         self.assertFalse(self.manager.attach(self.window))
         self.assertIn('занята', self.window.hotkey_hint.text())
+
+    def enable_polling(self):
+        self.held = set()
+        self.manager.keyboard_api = self.api
+        self.api.GetAsyncKeyState.side_effect = lambda key: 0x8000 if key in self.held else 0
+        self.manager.attach(self.window)
+
+    def test_polling_recovers_missing_native_message_once_per_press(self):
+        self.enable_polling()
+        with patch.object(self.window, 'toggle_from_hotkey') as toggle, patch('window_hotkey.time.monotonic', return_value=10):
+            self.held.add(VK_F4)
+            self.manager.poll_keyboard()
+            self.manager.poll_keyboard()
+            message = wintypes.MSG()
+            message.message, message.wParam = WM_HOTKEY, HOTKEY_ID
+            with patch('window_hotkey.time.monotonic', return_value=12):
+                self.manager.nativeEventFilter(b'windows_dispatcher_MSG', ctypes.addressof(message))
+            toggle.assert_called_once_with(foreground=False)
+        self.held.clear()
+        self.manager.poll_keyboard()
+        with patch.object(self.window, 'toggle_from_hotkey') as toggle, patch('window_hotkey.time.monotonic', return_value=11):
+            self.held.add(VK_F4)
+            self.manager.poll_keyboard()
+            toggle.assert_called_once()
+
+    def test_native_message_then_poll_does_not_hide_window_again(self):
+        self.enable_polling()
+        self.held.add(VK_F4)
+        with patch.object(self.window, 'toggle_from_hotkey') as toggle:
+            self.manager.activate()
+            self.manager.poll_keyboard()
+            toggle.assert_called_once()
+
+    def test_polling_respects_modifiers_and_suspension(self):
+        self.enable_polling()
+        self.manager.attach(self.window, 'Ctrl+H')
+        with patch.object(self.window, 'toggle_from_hotkey') as toggle:
+            self.held.add(0x48)
+            self.manager.poll_keyboard()
+            toggle.assert_not_called()
+            self.held.clear()
+            self.manager.poll_keyboard()
+            self.held.update((0x48, 0x11))
+            self.manager.poll_keyboard()
+            toggle.assert_called_once()
+            self.manager.stop()
+            self.assertFalse(self.manager.poll_timer.isActive())
+            self.held.clear()
+            self.manager.poll_keyboard()
+            self.held.update((0x48, 0x11))
+            self.manager.poll_keyboard()
+            toggle.assert_called_once()
+
+    def test_stale_qt_active_state_does_not_hide_window_over_game(self):
+        with patch.object(self.window, 'isActiveWindow', return_value=True):
+            self.manager.activate()
+        self.assertTrue(self.window.isVisible())
+        self.api.SetWindowPos.assert_called_once_with(int(self.window.winId()), -1, 0, 0, 0, 0, 0x43)
+        self.api.SetForegroundWindow.assert_called_once()
+
+    def test_foreground_helper_hides_without_raising_it_again(self):
+        self.api.GetForegroundWindow.return_value = int(self.window.winId())
+        self.manager.activate()
+        self.assertFalse(self.window.isVisible())
+        self.api.SetWindowPos.assert_not_called()
+
+    def test_held_key_when_resuming_does_not_activate(self):
+        self.enable_polling()
+        self.manager.stop()
+        self.held.add(VK_F4)
+        self.manager.attach(self.window)
+        with patch.object(self.window, 'toggle_from_hotkey') as toggle:
+            self.manager.poll_keyboard()
+            toggle.assert_not_called()
+
+    def test_topmost_disabled_setting_is_preserved(self):
+        self.window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+        self.manager.activate()
+        self.api.SetWindowPos.assert_called_once_with(int(self.window.winId()), 0, 0, 0, 0, 0, 0x43)
 
 
 if __name__ == '__main__':
