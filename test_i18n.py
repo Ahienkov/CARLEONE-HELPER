@@ -52,14 +52,14 @@ class LanguageTests(unittest.TestCase):
             original = window.filtered_articles[0]['description']
             for language, laws, traffic in (('en', 'Laws', 'Traffic'), ('uk', 'Закони', 'Дорожній'), ('ru', 'Законы', 'Дорожный')):
                 window.apply_preferences({**DEFAULTS, 'language': language})
-                self.assertEqual(window.mode_group.button(0).text(), laws)
+                self.assertEqual(window.mode_selector.itemText(0), laws)
                 self.assertEqual(window.category, 'Дорожный')
                 self.assertEqual(window.search.text(), '69')
                 self.assertEqual(window.filtered_articles[0]['description'], original)
                 button = next(b for b in window.category_group.buttons() if b.property('category') == 'Дорожный')
                 self.assertEqual(button.text(), traffic)
-                window.mode_group.button(1).click()
-                window.mode_group.button(0).click()
+                window.mode_selector.setCurrentIndex(1)
+                window.mode_selector.setCurrentIndex(0)
                 next(b for b in window.category_group.buttons() if b.property('category') == 'Дорожный').click()
         finally:
             window.close()

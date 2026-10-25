@@ -131,7 +131,7 @@ class UpdateUiTests(unittest.TestCase):
             next(b for b in window.category_group.buttons() if b.text() == 'Дорожный').click()
             window.search.setText('69')
             window.update_search()
-            data = copy.deepcopy(window.server_data['murrieta'])
+            data = {'name': 'Murrieta', 'laws': copy.deepcopy(window.current_records()), 'rules': []}
             target = next(a for a in data['laws'] if a['category'] == 'Дорожный' and a['number'] == '69')
             target['description'] += '\nОбновлённый текст с форума.'
             window.apply_forum_update(data)

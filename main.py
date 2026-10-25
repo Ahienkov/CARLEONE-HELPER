@@ -3,7 +3,7 @@ import re
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Qt, QTimer, QEvent, QSignalBlocker
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -27,12 +27,9 @@ from PySide6.QtWidgets import (
 )
 
 
-from codex_data import load_articles
-from road_data import load_road_articles
-from procedure_data import load_procedure_articles
-from labor_data import load_labor_articles
-from rules_data import load_rules, split_rule_punishment
-from extra_laws_data import EXTRA_LAWS, load_extra_laws
+from rules_data import split_rule_punishment
+from extra_laws_data import EXTRA_LAWS
+from section_environment import SectionEnvironment, SectionState
 from window_hotkey import application_hotkey
 from forum_updates import application_updates
 from app_settings import SettingsStore, SettingsDialog, validate_preferences
@@ -41,16 +38,13 @@ from penalty_data import punishment_text, penalty_supplement, SOURCE_URL as PENA
 from suspect_selection import SuspectStore, article_key
 from dark_combo import DarkComboBox
 
-ARTICLES = (
-    load_articles() + load_road_articles()
-    + load_procedure_articles() + load_labor_articles() + load_extra_laws()
-)
+SECTION_MODES = (('laws', 'Законы'), ('rules', 'Правила'), ('earnings', 'Заработок'))
 
 SERVER_DATA = {
     name.lower(): {'name': name, 'laws': [], 'rules': [], 'in_development': True}
     for name in ('Downtown', 'Eclipse', 'Rockford', 'Redwood', 'Murrieta', 'Chiliad', 'Mirror', 'Blaine')
 }
-SERVER_DATA['murrieta'] = {'name': 'Murrieta', 'laws': ARTICLES, 'rules': load_rules('murrieta')}
+SERVER_DATA['murrieta'] = {'name': 'Murrieta'}
 RULE_CATEGORIES = ('Все', 'Общие правила', 'Госорганизации', 'Криминальные организации', 'Неофициальные организации')
 LAW_CATEGORIES = (
     "Все", "Уголовный", "Административный", "Дорожный", "Процессуальный", "Трудовой",
@@ -358,7 +352,7 @@ class WindowTitleBar(QWidget):
 
 
 class CarleoneWindow(QMainWindow):
-    def __init__(self, server_data=None, selection_settings=None):
+    def __init__(self, server_data=None, selection_settings=None, initial_mode='laws', section_states=None, earnings_settings=None):
         super().__init__()
         self.settings_store = SettingsStore()
         self.suspect_store = SuspectStore(selection_settings)
@@ -371,6 +365,7 @@ class CarleoneWindow(QMainWindow):
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
         if sys.platform == "win32":
             import ctypes
@@ -383,13 +378,15 @@ class CarleoneWindow(QMainWindow):
         self.rules_categories_expanded = False
         self._overflow_categories = []
         self._category_layout_signature = None
-        self.mode = "laws"
-        self.suspect_filter_modes = {'laws': False, 'rules': False}
-        self.server_data = SERVER_DATA if server_data is None else server_data
-        self.search_index = {
-            (server_id, mode): [(article, searchable_article_text(article)) for article in data.get(mode, [])]
-            for server_id, data in self.server_data.items() for mode in ("laws", "rules")
-        }
+        self.mode = initial_mode
+        self.suspect_filter_modes = {mode: False for mode, _ in SECTION_MODES}
+        self.earnings_settings = earnings_settings
+        self.earnings_panel = None
+        self.server_data = {key: dict(value) for key, value in (SERVER_DATA if server_data is None else server_data).items()}
+        self._custom_catalog = server_data is not None
+        self.environments = {mode: SectionEnvironment(mode, (section_states or {}).get(mode))
+                             for mode, _ in SECTION_MODES}
+        self.search_index = {}
         self.filtered_articles = []
         self.rendered_count = 0
         self._loading_results = False
@@ -416,6 +413,7 @@ class CarleoneWindow(QMainWindow):
         self.setCentralWidget(root)
 
         main_layout = QVBoxLayout(root)
+        self.main_layout = main_layout
         main_layout.setContentsMargins(20, 20, 20, 14)
         main_layout.setSpacing(16)
 
@@ -469,35 +467,26 @@ class CarleoneWindow(QMainWindow):
 
         # Верхняя строка: поиск, название и разделы.
         top_row = QHBoxLayout()
-        top_row.setSpacing(12)
+        top_row.setSpacing(8)
 
         self.search = QLineEdit()
+        self.search.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.search.setPlaceholderText(tr("Поиск по законам"))
         self.search.setClearButtonEnabled(True)
         top_row.addWidget(self.search, stretch=1)
+        self.earnings_top_spacer = QWidget()
+        self.earnings_top_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.earnings_top_spacer.hide()
+        top_row.addWidget(self.earnings_top_spacer, stretch=1)
 
-        mode_frame = QFrame()
-        mode_frame.setObjectName("mode_switch")
-        mode_layout = QHBoxLayout(mode_frame)
-        mode_layout.setContentsMargins(3, 3, 3, 3)
-        mode_layout.setSpacing(3)
-
-        laws_button = QPushButton(tr("Законы"))
-        laws_button.setCheckable(True)
-        laws_button.setChecked(True)
-
-        rules_button = QPushButton(tr("Правила"))
-        rules_button.setCheckable(True)
-
-        mode_layout.addWidget(laws_button)
-        mode_layout.addWidget(rules_button)
-
-        self.mode_group = QButtonGroup(self)
-        self.mode_group.addButton(laws_button, 0)
-        self.mode_group.addButton(rules_button, 1)
-        self.mode_group.idClicked.connect(self.change_mode)
-
-        top_row.addWidget(mode_frame)
+        self.mode_selector = DarkComboBox()
+        for mode, label in SECTION_MODES:
+            self.mode_selector.addItem(tr(label), mode)
+        self.mode_selector.setAccessibleName(tr('Среда'))
+        self.mode_selector.setToolTip(tr('Выбрать среду'))
+        self.mode_selector.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        self.mode_selector.currentIndexChanged.connect(self.change_mode)
+        top_row.addWidget(self.mode_selector)
         self.suspect_button = QPushButton()
         self.suspect_button.setObjectName('suspect_filter')
         self.suspect_button.setCheckable(True)
@@ -510,7 +499,7 @@ class CarleoneWindow(QMainWindow):
         self.clear_suspect_button.hide()
         self.settings_button = QToolButton()
         self.settings_button.setText('⚙')
-        self.settings_button.setFixedSize(38, 38)
+        self.settings_button.setFixedSize(30, 38)
         self.settings_button.setStyleSheet('font-size: 24px; padding: 0px;')
         self.settings_button.setCursor(Qt.CursorShape.ArrowCursor)
         self.settings_button.setToolTip(tr('Настройки'))
@@ -520,11 +509,14 @@ class CarleoneWindow(QMainWindow):
         main_layout.addLayout(top_row)
 
         suspect_row = QHBoxLayout()
+        suspect_row.setContentsMargins(0, 0, 0, 0)
         suspect_row.setSpacing(6)
         suspect_row.addWidget(self.suspect_button)
         suspect_row.addWidget(self.clear_suspect_button)
         suspect_row.addStretch()
-        main_layout.addLayout(suspect_row)
+        self.suspect_row_widget = QWidget()
+        self.suspect_row_widget.setLayout(suspect_row)
+        main_layout.addWidget(self.suspect_row_widget)
 
         # Категории и сервер.
         filter_row = QHBoxLayout()
@@ -573,6 +565,7 @@ class CarleoneWindow(QMainWindow):
         default_server = self.server.findData('murrieta')
         if default_server >= 0:
             self.server.setCurrentIndex(default_server)
+        self.align_environment_selectors()
         filter_row.addWidget(self.server, alignment=Qt.AlignmentFlag.AlignTop)
 
         self.refresh_button = QToolButton()
@@ -666,10 +659,11 @@ class CarleoneWindow(QMainWindow):
         self.server.currentIndexChanged.connect(self.change_server)
         self.topic.currentIndexChanged.connect(self.update_search)
         self.scroll.verticalScrollBar().valueChanged.connect(self.schedule_load_more)
-        self.update_search()
+        self.restore_section_state()
 
     def showEvent(self, event):
         super().showEvent(event)
+        self.centralWidget().setFocus(Qt.FocusReason.OtherFocusReason)
         self.update_top_drag_region()
         self.apply_results_width()
         application_hotkey().attach(self, self.preferences['hotkey'])
@@ -722,8 +716,19 @@ class CarleoneWindow(QMainWindow):
             if source:
                 button.setToolTip(tr(source))
                 button.setAccessibleName(tr(source))
-        self.mode_group.button(0).setText(tr('Законы'))
-        self.mode_group.button(1).setText(tr('Правила'))
+        with QSignalBlocker(self.mode_selector):
+            for index, (_mode, label) in enumerate(SECTION_MODES):
+                self.mode_selector.setItemText(index, tr(label))
+        self.mode_selector.setAccessibleName(tr('Среда'))
+        self.mode_selector.setToolTip(tr('Выбрать среду'))
+        self.align_environment_selectors()
+        if self.earnings_panel is not None:
+            view = self.earnings_panel.export_view()
+            self.main_layout.removeWidget(self.earnings_panel)
+            self.earnings_panel.hide()
+            self.earnings_panel.deleteLater()
+            self.earnings_panel = None
+            self.environments['earnings'].state.extras = view
         self.search.setPlaceholderText(tr('Поиск по правилам' if self.mode == 'rules' else 'Поиск по законам'))
         self.settings_button.setToolTip(tr('Настройки'))
         self.settings_button.setAccessibleName(tr('Настройки приложения'))
@@ -815,20 +820,26 @@ class CarleoneWindow(QMainWindow):
 
     def apply_forum_update(self, catalog):
         # A checker started before live reload may still return unsplit rule text.
-        rules = []
-        for rule in catalog['rules']:
-            description, punishment = split_rule_punishment(rule['description'], rule.get('punishment', ''))
-            rules.append({**rule, 'source_text': rule.get('source_text', rule['description']),
-                          'description': description, 'punishment': punishment})
-        catalog = {**catalog, 'rules': rules}
+        if self.mode == 'rules' or self._custom_catalog:
+            rules = []
+            for rule in catalog['rules']:
+                description, punishment = split_rule_punishment(rule['description'], rule.get('punishment', ''))
+                rules.append({**rule, 'source_text': rule.get('source_text', rule['description']),
+                              'description': description, 'punishment': punishment})
+            catalog = {**catalog, 'rules': rules}
         category, topic = self.category, self.topic.currentData()
-        self.server_data["murrieta"] = catalog
-        for mode in ("laws", "rules"):
-            self.search_index[("murrieta", mode)] = [
-                (article, searchable_article_text(article)) for article in catalog[mode]
-            ]
+        # ForumSync has already saved both snapshots. Keep only the active
+        # parsed section; the other one will read its new snapshot on demand.
+        if self._custom_catalog:
+            self.server_data['murrieta'] = catalog
+        else:
+            self.server_data['murrieta'] = {'name': catalog['name']}
         if self.server.currentData() != "murrieta":
             return
+        if self.mode == 'earnings':
+            return
+        self.environments[self.mode].set_records('murrieta', catalog[self.mode], searchable_article_text)
+        self.search_index = {('murrieta', self.mode): self.environments[self.mode].index}
         self.rebuild_categories()
         for button in self.category_group.buttons():
             if (button.property("category") or button.text()) == category:
@@ -856,17 +867,19 @@ class CarleoneWindow(QMainWindow):
         self.resize_grip.setVisible(not self.isMaximized())
         self.left_resize_grip.setVisible(not self.isMaximized())
 
-    def toggle_from_hotkey(self, foreground=None):
-        active = self.isActiveWindow() if foreground is None else foreground
-        if self.isVisible() and not self.isMinimized() and active:
+    def toggle_from_hotkey(self, foreground=None, before_hide=None):
+        if self.isVisible() and not self.isMinimized():
+            mouse_grabber = QWidget.mouseGrabber()
+            if mouse_grabber is not None and mouse_grabber.window() is self:
+                mouse_grabber.releaseMouse()
+            if before_hide is not None:
+                before_hide()
             self.hide()
             return
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.show()
         self.raise_()
-        self.activateWindow()
-        self.search.setFocus(Qt.FocusReason.ShortcutFocusReason)
-        self.search.selectAll()
+        self.centralWidget().setFocus(Qt.FocusReason.OtherFocusReason)
 
     def schedule_search(self, _text):
         self.load_timer.stop()
@@ -924,8 +937,14 @@ class CarleoneWindow(QMainWindow):
         self.load_more_button.setText(tr('Показать ещё {count}', count=min(remaining, RESULT_BATCH_SIZE)))
 
     def current_records(self):
-        data = self.server_data.get(self.server.currentData(), {})
-        return data.get(self.mode, [])
+        if self.mode == 'earnings':
+            self.search_index = {}
+            return []
+        server = self.server.currentData()
+        environment = self.environments[self.mode]
+        environment.load(server, self.server_data.get(server, {}), searchable_article_text)
+        self.search_index = {(server, self.mode): environment.index}
+        return environment.records
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1042,7 +1061,9 @@ class CarleoneWindow(QMainWindow):
             self.extra_category_layout.removeWidget(button)
             button.hide()
             button.deleteLater()
-        if self.mode == 'laws':
+        if self.mode == 'earnings':
+            names = ()
+        elif self.mode == 'laws':
             names = LAW_CATEGORIES
         elif self.server_data.get(self.server.currentData(), {}).get('in_development'):
             names = RULE_CATEGORIES
@@ -1069,7 +1090,7 @@ class CarleoneWindow(QMainWindow):
         self.reflow_categories()
 
     def rebuild_topics(self):
-        self.topic.blockSignals(True)
+        previously_blocked = self.topic.blockSignals(True)
         self.topic.clear()
         self.topic.addItem(tr("Все темы"), "")
         topics = {}
@@ -1080,18 +1101,104 @@ class CarleoneWindow(QMainWindow):
         for topic_id, title in topics.items():
             self.topic.addItem(title, topic_id)
         self.topic.setVisible(self.mode == "rules")
-        self.topic.blockSignals(False)
+        self.topic.blockSignals(previously_blocked)
 
     def change_mode(self, mode_id):
-        mode = "rules" if mode_id == 1 else "laws"
+        if not 0 <= mode_id < len(SECTION_MODES):
+            return
+        mode = SECTION_MODES[mode_id][0]
         if mode == self.mode:
             return
+        self.save_section_state()
+        self.search_timer.stop()
+        self.load_timer.stop()
+        self.results_width_timer.stop()
+        self.clear_results()
+        self.filtered_articles = []
+        self.search_index.clear()
+        self.environments[self.mode].unload()
         self.suspect_filter_modes[self.mode] = self.suspect_button.isChecked()
         self.mode = mode
-        self.suspect_button.setChecked(self.suspect_filter_modes[mode])
-        self.search.setPlaceholderText(tr("Поиск по правилам" if self.mode == "rules" else "Поиск по законам"))
-        self.rebuild_categories()
+        self.suspect_button.setChecked(self.suspect_filter_modes.get(mode, False))
+        self.restore_section_state()
+
+    def save_section_state(self):
+        self.environments[self.mode].state = SectionState(
+            server=self.server.currentData(), query=self.search.text(), category=self.category,
+            topic=self.topic.currentData() or '', rendered=self.rendered_count,
+            scroll=self.scroll.verticalScrollBar().value(),
+            extras=self.earnings_panel.export_view() if self.mode == 'earnings' and self.earnings_panel is not None
+                   else self.environments[self.mode].state.extras)
+
+    def export_section_states(self):
+        self.save_section_state()
+        return {mode: environment.export_state() for mode, environment in self.environments.items()}
+
+    def restore_section_state(self):
+        state = self.environments[self.mode].state
+        with QSignalBlocker(self.server), QSignalBlocker(self.search), QSignalBlocker(self.topic):
+            index = self.server.findData(state.server)
+            if index >= 0:
+                self.server.setCurrentIndex(index)
+            self.search.setText(state.query)
+            self.search.setPlaceholderText(tr('Поиск по правилам' if self.mode == 'rules' else 'Поиск по законам'))
+            with QSignalBlocker(self.mode_selector):
+                self.mode_selector.setCurrentIndex(self.mode_selector.findData(self.mode))
+            self.rebuild_categories()
+            for button in self.category_group.buttons():
+                if button.property('category') == state.category:
+                    button.setChecked(True)
+                    self.category = state.category
+                    break
+            self.rebuild_topics()
+            index = self.topic.findData(state.topic)
+            if index >= 0:
+                self.topic.setCurrentIndex(index)
+            self.refresh_category_visibility()
         self.update_search()
+        while self.rendered_count < min(state.rendered, len(self.filtered_articles)):
+            self.load_more_results()
+        self.scroll.verticalScrollBar().setValue(state.scroll)
+
+    def clear_results(self):
+        while self.results_layout.count():
+            widget = self.results_layout.takeAt(0).widget()
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
+
+    def update_section_visibility(self):
+        earnings = self.mode == 'earnings'
+        self.main_layout.setSpacing(6 if earnings else 16)
+        self.main_layout.setContentsMargins(20, 12 if earnings else 20, 20, 8 if earnings else 14)
+        self.suspect_row_widget.setVisible(not earnings)
+        self.earnings_top_spacer.setVisible(earnings)
+        for widget in (self.search, self.suspect_button, self.scroll, self.status, self.note):
+            widget.setVisible(not earnings)
+        self.clear_suspect_button.setVisible(not earnings and self.suspect_button.isChecked() and bool(self.selected_suspect_keys()))
+        if earnings:
+            self.topic.hide()
+            self.expand_categories_button.hide()
+            self.extra_categories.hide()
+            self.load_more_button.hide()
+            if self.earnings_panel is None:
+                from earnings import EarningsPanel, EarningsStore
+                self.earnings_panel = EarningsPanel(EarningsStore(self.earnings_settings),
+                                                     view=self.environments['earnings'].state.extras)
+                self.earnings_panel.period_bar.layout().setContentsMargins(0, 1, self.refresh_button.width() + 8, 0)
+                self.main_layout.insertWidget(self.main_layout.indexOf(self.scroll) + 1, self.earnings_panel, 1)
+            self.earnings_panel.set_server(self.server.currentData())
+            self.earnings_panel.show()
+        elif self.earnings_panel is not None:
+            self.main_layout.removeWidget(self.earnings_panel)
+            self.earnings_panel.hide()
+            self.earnings_panel.deleteLater()
+            self.earnings_panel = None
+
+    def align_environment_selectors(self):
+        width = max(185, self.mode_selector.sizeHint().width(), self.server.sizeHint().width())
+        self.mode_selector.setFixedWidth(width)
+        self.server.setFixedWidth(width)
 
     def change_server(self, _index):
         self.rebuild_categories()
@@ -1197,6 +1304,13 @@ class CarleoneWindow(QMainWindow):
     def update_search(self, _text=None):
         self.search_timer.stop()
         self.load_timer.stop()
+        self.update_section_visibility()
+        if self.mode == 'earnings':
+            self.filtered_articles = []
+            self.rendered_count = 0
+            self.search_index = {}
+            self.clear_results()
+            return
 
         words = normalize(self.search.text()).split()
         number_match = re.search(r"(?<!\w)\d+(?:\.\d+)*(?!\w)", self.search.text())
@@ -1230,11 +1344,7 @@ class CarleoneWindow(QMainWindow):
         results.setUpdatesEnabled(False)
         self.results_layout.setEnabled(False)
         try:
-            while self.results_layout.count():
-                widget = self.results_layout.takeAt(0).widget()
-                if widget is not None:
-                    widget.hide()
-                    widget.deleteLater()
+            self.clear_results()
             self.filtered_articles = matches
             self.rendered_count = 0
             self.scroll.verticalScrollBar().setValue(0)
@@ -1270,6 +1380,11 @@ class CarleoneWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    # Also covers existing portable EXEs receiving this main.py through an
+    # automatic source update; their embedded entry point cannot be replaced.
+    from elevation import ensure_administrator
+    if not ensure_administrator():
+        raise SystemExit(0)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 

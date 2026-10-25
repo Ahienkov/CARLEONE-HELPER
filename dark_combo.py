@@ -1,6 +1,6 @@
 """Dark popup backgrounds, including the margins outside the list view."""
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QPalette, QPainter
+from PySide6.QtCore import QSize, Qt, QPoint, QRectF
+from PySide6.QtGui import QColor, QPalette, QPainter, QPainterPath, QRegion
 from PySide6.QtWidgets import QComboBox, QListView, QStyledItemDelegate, QStyle, QStyleOptionViewItem
 
 
@@ -57,3 +57,23 @@ class DarkComboBox(QComboBox):
         popup.setPalette(palette)
         popup.setAutoFillBackground(True)
         popup.setStyleSheet('QFrame#combo_popup { background-color: #1b2229; border: none; }')
+
+    def showPopup(self):
+        super().showPopup()
+        popup = self.view().window()
+        if popup.layout() is not None:
+            popup.layout().setContentsMargins(0, 0, 0, 0)
+            popup.layout().setSpacing(0)
+        popup.setFixedWidth(self.width())
+        origin = self.mapToGlobal(QPoint(0, self.height() + 3))
+        available = self.screen().availableGeometry()
+        x = max(available.left(), min(origin.x(), available.right() - popup.width() + 1))
+        y = origin.y()
+        if y + popup.height() > available.bottom() + 1:
+            y = self.mapToGlobal(QPoint(0, -popup.height() - 3)).y()
+        popup.move(x, max(available.top(), y))
+        # The native popup container otherwise paints a rectangular background
+        # outside the list view's rounded border, and offsets the selected row.
+        rounded = QPainterPath()
+        rounded.addRoundedRect(QRectF(popup.rect()), 9, 9)
+        popup.setMask(QRegion(rounded.toFillPolygon().toPolygon()))

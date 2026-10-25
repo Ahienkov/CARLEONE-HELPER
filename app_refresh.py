@@ -9,7 +9,7 @@ from i18n import tr
 
 DATA_MODULES = (
     "road_data", "codex_data", "procedure_data", "labor_data", "rules_data", "extra_laws_data",
-    "i18n", "penalty_data", "suspect_selection", "dark_combo", "hotkey_config", "app_settings", "window_hotkey",
+    "i18n", "penalty_data", "suspect_selection", "dark_combo", "hotkey_config", "app_settings", "window_hotkey", "section_environment", "earnings", "reselling",
 )
 
 
@@ -25,6 +25,7 @@ def reload_application(window):
             "geometry": window.saveGeometry(), "maximized": window.isMaximized(),
             "suspect_filter": getattr(window, 'suspect_button', None) is not None and window.suspect_button.isChecked(),
             "suspect_filters": dict(getattr(window, 'suspect_filter_modes', {'laws': False, 'rules': False})),
+            "sections": window.export_section_states() if hasattr(window, 'export_section_states') else None,
         }
         importlib.invalidate_caches()
         for name in DATA_MODULES:
@@ -33,40 +34,22 @@ def reload_application(window):
         # until the new version has loaded and constructed successfully.
         namespace = runpy.run_path(str(Path(__file__).with_name("main.py")), run_name="carleone_live")
         selection_settings = window.suspect_store.settings if hasattr(window, 'suspect_store') else None
-        replacement = namespace["CarleoneWindow"](selection_settings=selection_settings)
+        sections = state['sections'] or {state['mode']: {
+            'server': state['server'], 'query': state['query'],
+            'category': state['category'], 'topic': state['topic'] or '',
+        }}
+        replacement = namespace["CarleoneWindow"](selection_settings=selection_settings,
+                                                 initial_mode=state['mode'], section_states=sections,
+                                                 earnings_settings=getattr(window, 'earnings_settings', None))
         replacement.restoreGeometry(state["geometry"])
-        index = replacement.server.findData(state["server"])
-        if index >= 0:
-            replacement.server.blockSignals(True)
-            replacement.server.setCurrentIndex(index)
-            replacement.server.blockSignals(False)
-        replacement.mode = state["mode"]
         replacement.suspect_filter_modes = state['suspect_filters']
         replacement.suspect_button.setChecked(state['suspect_filter'])
-        replacement.mode_group.button(1 if state["mode"] == "rules" else 0).setChecked(True)
-        replacement.search.setPlaceholderText(tr("Поиск по правилам" if state["mode"] == "rules" else "Поиск по законам"))
         replacement.law_categories_expanded = state["expanded"]
         replacement.rules_categories_expanded = state["rules_expanded"]
         replacement.expand_categories_button.blockSignals(True)
         replacement.expand_categories_button.setChecked(state["expanded"])
         replacement.expand_categories_button.blockSignals(False)
-        replacement.rebuild_categories()
-        for button in replacement.category_group.buttons():
-            if (button.property("category") or button.text()) == state["category"]:
-                button.setChecked(True)
-                replacement.category = state["category"]
-                break
-        replacement.rebuild_topics()
-        index = replacement.topic.findData(state["topic"])
-        if index >= 0:
-            replacement.topic.blockSignals(True)
-            replacement.topic.setCurrentIndex(index)
-            replacement.topic.blockSignals(False)
-        replacement.search.blockSignals(True)
-        replacement.search.setText(state["query"])
-        replacement.search.blockSignals(False)
-        replacement.refresh_category_visibility()
-        replacement.update_search()
+        replacement.restore_section_state()
         replacement.status.setText(replacement.status.text() + " · " + tr("Обновлено"))
         if state["maximized"]:
             replacement.showMaximized()

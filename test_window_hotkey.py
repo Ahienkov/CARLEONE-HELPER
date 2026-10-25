@@ -95,7 +95,7 @@ class HotkeyTests(unittest.TestCase):
             message.message, message.wParam = WM_HOTKEY, HOTKEY_ID
             with patch('window_hotkey.time.monotonic', return_value=12):
                 self.manager.nativeEventFilter(b'windows_dispatcher_MSG', ctypes.addressof(message))
-            toggle.assert_called_once_with(foreground=False)
+            toggle.assert_called_once()
         self.held.clear()
         self.manager.poll_keyboard()
         with patch.object(self.window, 'toggle_from_hotkey') as toggle, patch('window_hotkey.time.monotonic', return_value=11):
@@ -131,12 +131,11 @@ class HotkeyTests(unittest.TestCase):
             self.manager.poll_keyboard()
             toggle.assert_called_once()
 
-    def test_stale_qt_active_state_does_not_hide_window_over_game(self):
-        with patch.object(self.window, 'isActiveWindow', return_value=True):
+    def test_visible_helper_hides_even_when_game_keeps_foreground(self):
+        with patch.object(self.window, 'isActiveWindow', return_value=False):
             self.manager.activate()
-        self.assertTrue(self.window.isVisible())
-        self.api.SetWindowPos.assert_called_once_with(int(self.window.winId()), -1, 0, 0, 0, 0, 0x43)
-        self.api.SetForegroundWindow.assert_called_once()
+        self.assertFalse(self.window.isVisible())
+        self.api.SetWindowPos.assert_not_called()
 
     def test_foreground_helper_hides_without_raising_it_again(self):
         self.api.GetForegroundWindow.return_value = int(self.window.winId())
@@ -155,8 +154,169 @@ class HotkeyTests(unittest.TestCase):
 
     def test_topmost_disabled_setting_is_preserved(self):
         self.window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+        self.window.hide()
         self.manager.activate()
-        self.api.SetWindowPos.assert_called_once_with(int(self.window.winId()), 0, 0, 0, 0, 0, 0x43)
+        self.api.SetWindowPos.assert_called_once_with(int(self.window.winId()), 0, 0, 0, 0, 0, 0x53)
+
+    def test_native_message_after_polling_keeps_game_foreground_without_second_toggle(self):
+        self.enable_polling()
+        self.held.add(VK_F4)
+        self.window.hide()
+        with patch.object(self.window, 'toggle_from_hotkey', wraps=self.window.toggle_from_hotkey) as toggle:
+            self.manager.poll_keyboard()
+            self.api.SetForegroundWindow.reset_mock()
+            message = wintypes.MSG()
+            message.message, message.wParam = WM_HOTKEY, HOTKEY_ID
+            self.manager.nativeEventFilter(b'windows_dispatcher_MSG', ctypes.addressof(message))
+            toggle.assert_called_once()
+            self.assertTrue(self.window.isVisible())
+            self.api.SetForegroundWindow.assert_not_called()
+            self.api.SetWindowPos.assert_called_with(int(self.window.winId()), -1, 0, 0, 0, 0, 0x53)
+
+    def test_hotkey_shows_panel_without_requesting_keyboard_activation(self):
+        self.prepare_return_window()
+        self.window.hide()
+        with patch.object(self.window, 'activateWindow') as activate:
+            self.manager.activate()
+        self.assertTrue(self.window.isVisible())
+        self.assertTrue(self.window.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating))
+        self.assertFalse(self.window.search.hasFocus())
+        activate.assert_not_called()
+        self.api.SetForegroundWindow.assert_not_called()
+        self.api.SetWindowPos.assert_called_once_with(int(self.window.winId()), -1, 0, 0, 0, 0, 0x53)
+
+    def test_passive_show_hide_cycle_does_not_switch_foreground(self):
+        self.prepare_return_window()
+        self.window.hide()
+        for tick in (10, 11):
+            with patch('window_hotkey.time.monotonic', return_value=tick):
+                self.manager.activate()
+        self.assertFalse(self.window.isVisible())
+        self.api.SetForegroundWindow.assert_not_called()
+
+    def test_privilege_warning_changes_with_foreground_application(self):
+        self.enable_polling()
+        self.manager.access_check = Mock()
+        self.manager.access_check.blocked.return_value = True
+        self.manager.poll_keyboard()
+        self.assertIn('администратора', self.window.hotkey_hint.text())
+        self.manager.last_access_check = float('-inf')
+        self.manager.access_check.blocked.return_value = False
+        self.manager.poll_keyboard()
+        self.assertNotIn('администратора', self.window.hotkey_hint.text())
+
+    def prepare_return_window(self, handle=777, pid=888):
+        self.api.IsWindow.return_value = True
+        self.api.IsWindowVisible.return_value = True
+        def window_pid(window, output):
+            output._obj.value = pid
+            return 1
+        self.api.GetWindowThreadProcessId.side_effect = window_pid
+        self.api.GetForegroundWindow.return_value = handle
+
+    def test_hiding_returns_input_to_previous_game_before_handler_returns(self):
+        self.prepare_return_window()
+        self.window.hide()
+        with patch('window_hotkey.time.monotonic', return_value=10):
+            self.manager.activate()
+        self.assertTrue(self.window.isVisible())
+        self.api.SetForegroundWindow.reset_mock()
+        self.api.GetForegroundWindow.return_value = int(self.window.winId())
+        visible_at_restore = []
+        self.api.SetForegroundWindow.side_effect = lambda handle: visible_at_restore.append(self.window.isVisible()) or True
+        with patch('window_hotkey.time.monotonic', return_value=11):
+            self.manager.activate()
+        self.assertFalse(self.window.isVisible())
+        self.api.SetForegroundWindow.assert_called_once_with(777)
+        self.assertEqual(visible_at_restore, [True])
+
+    def test_late_native_message_retries_return_to_game_without_reopening(self):
+        self.enable_polling()
+        self.prepare_return_window()
+        self.manager.return_window = (777, 888)
+        self.api.GetForegroundWindow.return_value = int(self.window.winId())
+        self.window.hide()
+        self.manager.key_down = True
+        message = wintypes.MSG()
+        message.message, message.wParam = WM_HOTKEY, HOTKEY_ID
+        self.manager.nativeEventFilter(b'windows_dispatcher_MSG', ctypes.addressof(message))
+        self.assertFalse(self.window.isVisible())
+        self.api.SetForegroundWindow.assert_called_once_with(777)
+
+    def test_closed_hidden_or_reused_return_window_is_not_activated(self):
+        for exists, visible, pid in ((False, True, 888), (True, False, 888), (True, True, 999)):
+            with self.subTest(exists=exists, visible=visible, pid=pid):
+                self.prepare_return_window(pid=pid)
+                self.api.IsWindow.return_value = exists
+                self.api.IsWindowVisible.return_value = visible
+                self.manager.return_window = (777, 888)
+                self.manager.restore_foreground()
+                self.api.SetForegroundWindow.assert_not_called()
+                self.assertIsNone(self.manager.return_window)
+
+    def test_hiding_releases_own_mouse_grab(self):
+        grabber = Mock()
+        grabber.window.return_value = self.window
+        with patch('main.QWidget.mouseGrabber', return_value=grabber):
+            self.window.toggle_from_hotkey(foreground=True)
+        grabber.releaseMouse.assert_called_once()
+        self.assertFalse(self.window.isVisible())
+
+    def test_return_focus_failure_retries_after_hiding(self):
+        self.prepare_return_window()
+        self.manager.return_window = (777, 888)
+        self.api.GetForegroundWindow.return_value = int(self.window.winId())
+        visible_at_restore = []
+        def restore(handle):
+            visible_at_restore.append(self.window.isVisible())
+            return len(visible_at_restore) > 1
+        self.api.SetForegroundWindow.side_effect = restore
+        self.manager.activate()
+        self.assertFalse(self.window.isVisible())
+        self.assertEqual(visible_at_restore, [True, False])
+
+    def test_mouse_is_released_before_foreground_is_returned(self):
+        grabber = Mock()
+        grabber.window.return_value = self.window
+        def before_hide():
+            self.assertTrue(self.window.isVisible())
+            grabber.releaseMouse.assert_called_once()
+        with patch('main.QWidget.mouseGrabber', return_value=grabber):
+            self.window.toggle_from_hotkey(foreground=True, before_hide=before_hide)
+        self.assertFalse(self.window.isVisible())
+
+    def test_hotkey_reopens_and_hides_without_clicking_search(self):
+        self.window.hide()
+        with patch.object(self.window, 'isActiveWindow', return_value=False):
+            for tick in (10, 11, 12, 13):
+                with patch('window_hotkey.time.monotonic', return_value=tick):
+                    self.manager.activate()
+                self.assertEqual(self.window.isVisible(), tick % 2 == 0)
+                self.assertFalse(self.window.search.hasFocus())
+        self.window.toggle_from_hotkey(foreground=False)
+        self.window.activateWindow()
+        self.app.processEvents()
+        from PySide6.QtTest import QTest
+        QTest.mouseClick(self.window.search, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+        self.assertIs(self.window.focusWidget(), self.window.search)
+
+    def test_diagnostic_records_return_result_without_cursor_coordinates(self):
+        import tempfile
+        import json
+        from pathlib import Path
+        self.manager.diagnostics = True
+        self.api.GetCursorInfo.return_value = False
+        self.manager.return_window = (777, 888)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('window_hotkey.Path', return_value=Path(directory) / 'window_hotkey.py'):
+                self.manager.record_diagnostic('return_focus', target=777, accepted=False)
+            record = json.loads((Path(directory) / '.hotkey-debug.jsonl').read_text())
+        self.assertEqual(record['event'], 'return_focus')
+        self.assertEqual(record['target'], 777)
+        self.assertFalse(record['accepted'])
+        self.assertIsNone(record['cursor_visible'])
+        self.assertNotIn('ptScreenPos', record)
 
 
 if __name__ == '__main__':

@@ -57,7 +57,7 @@ class ExtraLawsTests(unittest.TestCase):
                 self.assertTrue(label.text().startswith(law['code']))
                 w.search.clear()
                 w.update_search()
-            w.mode_group.button(1).click()
+            w.mode_selector.setCurrentIndex(1)
             self.assertFalse(any(a['category'] in {law['category'] for law in EXTRA_LAWS} for a in w.current_records()))
         finally:
             w.close()

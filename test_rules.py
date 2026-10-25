@@ -45,7 +45,7 @@ class RulesTests(unittest.TestCase):
 
     def test_categories_topics_priority_and_law_regression(self):
         w = self.window
-        w.mode_group.button(1).click()
+        w.mode_selector.setCurrentIndex(1)
         self.assertEqual(len(w.category_group.buttons()), 5)
         self.assertEqual(w.topic.count(), 37)
         next(b for b in w.category_group.buttons() if b.text() == 'Госорганизации').click()
@@ -60,7 +60,7 @@ class RulesTests(unittest.TestCase):
         w.update_search()
         label = w.results_layout.itemAt(0).widget().findChild(QLabel, 'article_number')
         self.assertEqual(label.text(), 'Правило 1.17')
-        w.mode_group.button(0).click()
+        w.mode_selector.setCurrentIndex(0)
         w.search.setText('15.6')
         w.update_search()
         label = w.results_layout.itemAt(0).widget().findChild(QLabel, 'article_number')
@@ -69,7 +69,7 @@ class RulesTests(unittest.TestCase):
     def test_server_change_never_reuses_murrieta_rules(self):
         w = CarleoneWindow({**SERVER_DATA, 'empty': {'name': 'Empty', 'laws': [], 'rules': []}})
         try:
-            w.mode_group.button(1).click()
+            w.mode_selector.setCurrentIndex(1)
             self.assertGreater(len(w.current_records()), 0)
             w.server.setCurrentIndex(w.server.findData('empty'))
             self.assertEqual(w.current_records(), [])
@@ -84,7 +84,7 @@ class RulesTests(unittest.TestCase):
     def test_switch_renders_only_first_batch_and_loads_all_in_order(self):
         w = self.window
         with patch.object(w, 'create_article_card', wraps=w.create_article_card) as create:
-            w.mode_group.button(1).click()
+            w.mode_selector.setCurrentIndex(1)
             self.assertEqual(create.call_count, RESULT_BATCH_SIZE)
         expected = list(w.filtered_articles)
         self.assertGreater(len(expected), RESULT_BATCH_SIZE)
@@ -95,37 +95,50 @@ class RulesTests(unittest.TestCase):
         self.assertEqual(w.rendered_count, len(expected))
         self.assertEqual(w.results_layout.count(), len(expected))
         self.assertEqual(w.filtered_articles, expected)
-        w.mode_group.button(0).click()
+        w.mode_selector.setCurrentIndex(0)
         self.assertEqual(w.rendered_count, RESULT_BATCH_SIZE)
 
     def test_typing_debounces_and_switch_cancels_pending_search(self):
         from PySide6.QtTest import QTest
+        from PySide6.QtCore import QElapsedTimer
         w = self.window
         w.search.setText('15')
         w.search.setText('15.')
         w.search.setText('15.6')
         self.assertTrue(w.search_timer.isActive())
         with patch.object(w, 'create_article_card', wraps=w.create_article_card) as create:
-            QTest.qWait(SEARCH_DELAY_MS + 100)
+            # Busy Windows/CI event loops may deliver a timer later than its
+            # interval. Wait for completion with a bound, not a fixed sleep.
+            elapsed = QElapsedTimer()
+            elapsed.start()
+            while w.search_timer.isActive() and elapsed.elapsed() < 2000:
+                QTest.qWait(10)
             self.assertFalse(w.search_timer.isActive())
             self.assertEqual(create.call_count, len(w.filtered_articles))
             self.assertEqual(w.filtered_articles[0]['number'], '15.6')
         w.search.setText('1.1')
-        w.mode_group.button(1).click()
+        w.mode_selector.setCurrentIndex(1)
         self.assertFalse(w.search_timer.isActive())
         self.assertTrue(all(a['kind'] == 'rule' for a in w.filtered_articles))
-        self.assertEqual(w.filtered_articles[0]['number'], '1.1')
+        self.assertEqual(w.search.text(), '')
+        w.mode_selector.setCurrentIndex(0)
+        self.assertEqual(w.search.text(), '1.1')
+        self.assertFalse(w.search_timer.isActive())
 
     def test_scrolling_loads_next_batch(self):
         from PySide6.QtTest import QTest
+        from PySide6.QtCore import QElapsedTimer
         w = self.window
-        w.mode_group.button(1).click()
+        w.mode_selector.setCurrentIndex(1)
         w.show()
         self.app.processEvents()
         QTest.qWait(RESIZE_SETTLE_MS + 40)
         bar = w.scroll.verticalScrollBar()
         bar.setValue(bar.maximum())
-        self.app.processEvents()
+        elapsed = QElapsedTimer()
+        elapsed.start()
+        while w.rendered_count < RESULT_BATCH_SIZE * 2 and elapsed.elapsed() < 2000:
+            QTest.qWait(10)
         self.assertEqual(w.rendered_count, RESULT_BATCH_SIZE * 2)
 
 

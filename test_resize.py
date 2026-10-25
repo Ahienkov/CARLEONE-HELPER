@@ -17,7 +17,7 @@ class ResizeTests(unittest.TestCase):
     def setUp(self):
         self.window = CarleoneWindow()
         self.window.show()
-        self.window.mode_group.button(1).click()
+        self.window.mode_selector.setCurrentIndex(1)
         self.app.processEvents()
         QTest.qWait(RESIZE_SETTLE_MS + 100)
 

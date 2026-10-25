@@ -18,7 +18,7 @@ class RefreshTests(unittest.TestCase):
     def test_refresh_recreates_source_and_keeps_view_in_same_process(self):
         window = CarleoneWindow()
         window.show()
-        window.mode_group.button(1).click()
+        window.mode_selector.setCurrentIndex(1)
         next(b for b in window.category_group.buttons() if b.text() == 'Госорганизации').click()
         window.topic.setCurrentIndex(1)
         topic = window.topic.currentData()

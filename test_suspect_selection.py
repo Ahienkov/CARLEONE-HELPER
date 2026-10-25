@@ -80,9 +80,7 @@ class SuspectSelectionTests(unittest.TestCase):
     def test_servers_and_codes_do_not_share_selections(self):
         w = self.window
         w.toggle_suspect_article(self.key)
-        w.server_data = {**w.server_data, 'test': {**SERVER_DATA['murrieta'], 'name': 'Test'}}
-        for mode in ('laws', 'rules'):
-            w.search_index[('test', mode)] = w.search_index[('murrieta', mode)]
+        w.server_data = {**w.server_data, 'test': {'name': 'Test', 'laws': w.current_records(), 'rules': []}}
         w.server.addItem('Test', 'test')
         w.server.setCurrentIndex(w.server.findData('test'))
         self.assertFalse(w.selected_suspect_keys())
@@ -95,7 +93,7 @@ class SuspectSelectionTests(unittest.TestCase):
         w = self.window
         w.toggle_suspect_article(self.key)
         w.suspect_button.click()
-        w.mode_group.button(1).click()
+        w.mode_selector.setCurrentIndex(1)
         self.assertFalse(w.suspect_button.isChecked())
         self.assertEqual(w.selected_suspect_keys(), set())
         rule = next(r for r in w.current_records() if not r['number'].startswith('Справка'))
@@ -106,14 +104,14 @@ class SuspectSelectionTests(unittest.TestCase):
         self.assertIsNotNone(w.results_layout.itemAt(0).widget().findChild(QPushButton, 'suspect_add'))
         w.clear_suspect_button.click()
         self.assertFalse(w.selected_suspect_keys())
-        w.mode_group.button(0).click()
+        w.mode_selector.setCurrentIndex(0)
         self.assertEqual(w.selected_suspect_keys(), {self.key})
         self.assertTrue(w.suspect_button.isChecked())
         self.assertEqual(w.suspect_button.text(), 'Нарушения подозреваемого (1)')
 
     def test_equal_rule_numbers_in_different_topics_are_independent(self):
         w = self.window
-        w.mode_group.button(1).click()
+        w.mode_selector.setCurrentIndex(1)
         rules = [r for r in w.current_records() if r['number'] == '1.1']
         first = rules[0]
         other = next(r for r in rules if r['topic_id'] != first['topic_id'])
@@ -124,7 +122,7 @@ class SuspectSelectionTests(unittest.TestCase):
 
     def test_rule_selection_survives_live_refresh(self):
         w = self.window
-        w.mode_group.button(1).click()
+        w.mode_selector.setCurrentIndex(1)
         rule = next(r for r in w.current_records() if r['number'] == '6.1.1')
         key = article_key(rule)
         w.toggle_suspect_article(key)
@@ -156,8 +154,10 @@ class SuspectSelectionTests(unittest.TestCase):
             self.assertGreaterEqual(results.height(), w.results_layout.totalHeightForWidth(results.width()))
             for index in range(w.results_layout.count()):
                 self.assertGreater(w.results_layout.itemAt(index).widget().height(), 100)
-        self.assertGreater(w.suspect_button.y(), w.search.geometry().bottom())
-        self.assertLess(w.suspect_button.geometry().bottom(), w.server.y())
+        suspect_top = w.suspect_button.mapTo(w, w.suspect_button.rect().topLeft()).y()
+        suspect_bottom = w.suspect_button.mapTo(w, w.suspect_button.rect().bottomLeft()).y()
+        self.assertGreater(suspect_top, w.search.geometry().bottom())
+        self.assertLess(suspect_bottom, w.server.y())
 
     def test_empty_search_restores_full_height_without_refresh(self):
         w = self.window
