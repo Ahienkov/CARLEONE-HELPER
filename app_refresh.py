@@ -9,7 +9,7 @@ from i18n import tr
 
 DATA_MODULES = (
     "road_data", "codex_data", "procedure_data", "labor_data", "rules_data", "extra_laws_data",
-    "i18n", "penalty_data", "suspect_selection", "dark_combo", "hotkey_config", "app_settings", "window_hotkey", "section_environment", "earnings", "reselling",
+    "i18n", "penalty_data", "suspect_selection", "dark_combo", "hotkey_config", "app_settings", "window_hotkey", "law_search", "section_environment", "earnings", "reselling", "notepad",
 )
 
 
@@ -40,7 +40,8 @@ def reload_application(window):
         }}
         replacement = namespace["CarleoneWindow"](selection_settings=selection_settings,
                                                  initial_mode=state['mode'], section_states=sections,
-                                                 earnings_settings=getattr(window, 'earnings_settings', None))
+                                                 earnings_settings=getattr(window, 'earnings_settings', None),
+                                                 notepad_settings=getattr(window, 'notepad_settings', None))
         replacement.restoreGeometry(state["geometry"])
         replacement.suspect_filter_modes = state['suspect_filters']
         replacement.suspect_button.setChecked(state['suspect_filter'])

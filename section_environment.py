@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass, field
 
 
 def load_section(server_id, mode):
-    if mode == 'earnings':
+    if mode in ('earnings', 'notepad'):
         return []
     if server_id != 'murrieta':
         return []
@@ -40,6 +40,7 @@ class SectionEnvironment:
         self.server = None
         self.records = None
         self.index = None
+        self.law_search = None
 
     def load(self, server, catalog, searchable_text):
         if self.server == server and self.records is not None:
@@ -52,7 +53,10 @@ class SectionEnvironment:
     def set_records(self, server, records, searchable_text):
         # Build first so a parse/index error doesn't leave a half-loaded section.
         index = [(article, searchable_text(article)) for article in records]
+        from law_search import LawSearchIndex
+        law_search = LawSearchIndex(index) if self.mode == 'laws' else None
         self.server, self.records, self.index = server, records, index
+        self.law_search = law_search
 
     def export_state(self):
         return asdict(self.state)

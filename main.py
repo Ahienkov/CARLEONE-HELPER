@@ -38,7 +38,7 @@ from penalty_data import punishment_text, penalty_supplement, SOURCE_URL as PENA
 from suspect_selection import SuspectStore, article_key
 from dark_combo import DarkComboBox
 
-SECTION_MODES = (('laws', 'Законы'), ('rules', 'Правила'), ('earnings', 'Заработок'))
+SECTION_MODES = (('laws', 'Законы'), ('rules', 'Правила'), ('earnings', 'Заработок'), ('notepad', 'Блокнот'))
 
 SERVER_DATA = {
     name.lower(): {'name': name, 'laws': [], 'rules': [], 'in_development': True}
@@ -352,7 +352,7 @@ class WindowTitleBar(QWidget):
 
 
 class CarleoneWindow(QMainWindow):
-    def __init__(self, server_data=None, selection_settings=None, initial_mode='laws', section_states=None, earnings_settings=None):
+    def __init__(self, server_data=None, selection_settings=None, initial_mode='laws', section_states=None, earnings_settings=None, notepad_settings=None):
         super().__init__()
         self.settings_store = SettingsStore()
         self.suspect_store = SuspectStore(selection_settings)
@@ -382,6 +382,8 @@ class CarleoneWindow(QMainWindow):
         self.suspect_filter_modes = {mode: False for mode, _ in SECTION_MODES}
         self.earnings_settings = earnings_settings
         self.earnings_panel = None
+        self.notepad_settings = notepad_settings
+        self.notepad_panel = None
         self.server_data = {key: dict(value) for key, value in (SERVER_DATA if server_data is None else server_data).items()}
         self._custom_catalog = server_data is not None
         self.environments = {mode: SectionEnvironment(mode, (section_states or {}).get(mode))
@@ -709,6 +711,8 @@ class CarleoneWindow(QMainWindow):
             self.retranslate_ui()
 
     def retranslate_ui(self):
+        if self.notepad_panel is not None:
+            self.notepad_panel.retranslate_ui()
         category, topic = self.category, self.topic.currentData()
         self.setWindowTitle(tr('GTA 5 RP HELPER — помощник GTA 5 RP'))
         for button in self.title_bar.findChildren(QToolButton):
@@ -836,7 +840,7 @@ class CarleoneWindow(QMainWindow):
             self.server_data['murrieta'] = {'name': catalog['name']}
         if self.server.currentData() != "murrieta":
             return
-        if self.mode == 'earnings':
+        if self.mode in ('earnings', 'notepad'):
             return
         self.environments[self.mode].set_records('murrieta', catalog[self.mode], searchable_article_text)
         self.search_index = {('murrieta', self.mode): self.environments[self.mode].index}
@@ -856,6 +860,9 @@ class CarleoneWindow(QMainWindow):
         self.update_search()
 
     def closeEvent(self, event):
+        if self.notepad_panel is not None and not self.notepad_panel.flush():
+            event.ignore()
+            return
         application_hotkey().detach(self)
         self.search_timer.stop()
         self.load_timer.stop()
@@ -937,7 +944,7 @@ class CarleoneWindow(QMainWindow):
         self.load_more_button.setText(tr('Показать ещё {count}', count=min(remaining, RESULT_BATCH_SIZE)))
 
     def current_records(self):
-        if self.mode == 'earnings':
+        if self.mode in ('earnings', 'notepad'):
             self.search_index = {}
             return []
         server = self.server.currentData()
@@ -1061,7 +1068,7 @@ class CarleoneWindow(QMainWindow):
             self.extra_category_layout.removeWidget(button)
             button.hide()
             button.deleteLater()
-        if self.mode == 'earnings':
+        if self.mode in ('earnings', 'notepad'):
             names = ()
         elif self.mode == 'laws':
             names = LAW_CATEGORIES
@@ -1109,6 +1116,10 @@ class CarleoneWindow(QMainWindow):
         mode = SECTION_MODES[mode_id][0]
         if mode == self.mode:
             return
+        if self.notepad_panel is not None and not self.notepad_panel.flush():
+            with QSignalBlocker(self.mode_selector):
+                self.mode_selector.setCurrentIndex(self.mode_selector.findData(self.mode))
+            return
         self.save_section_state()
         self.search_timer.stop()
         self.load_timer.stop()
@@ -1131,6 +1142,8 @@ class CarleoneWindow(QMainWindow):
                    else self.environments[self.mode].state.extras)
 
     def export_section_states(self):
+        if self.notepad_panel is not None and not self.notepad_panel.flush():
+            raise OSError(self.notepad_panel.status.text())
         self.save_section_state()
         return {mode: environment.export_state() for mode, environment in self.environments.items()}
 
@@ -1168,11 +1181,12 @@ class CarleoneWindow(QMainWindow):
                 widget.deleteLater()
 
     def update_section_visibility(self):
-        earnings = self.mode == 'earnings'
+        earnings = self.mode in ('earnings', 'notepad')
         self.main_layout.setSpacing(6 if earnings else 16)
         self.main_layout.setContentsMargins(20, 12 if earnings else 20, 20, 8 if earnings else 14)
         self.suspect_row_widget.setVisible(not earnings)
         self.earnings_top_spacer.setVisible(earnings)
+        self.server.setVisible(self.mode != 'notepad')
         for widget in (self.search, self.suspect_button, self.scroll, self.status, self.note):
             widget.setVisible(not earnings)
         self.clear_suspect_button.setVisible(not earnings and self.suspect_button.isChecked() and bool(self.selected_suspect_keys()))
@@ -1181,6 +1195,18 @@ class CarleoneWindow(QMainWindow):
             self.expand_categories_button.hide()
             self.extra_categories.hide()
             self.load_more_button.hide()
+        if self.mode == 'notepad':
+            if self.notepad_panel is None:
+                from notepad import NotepadPanel, NotepadStore
+                self.notepad_panel = NotepadPanel(NotepadStore(self.notepad_settings))
+                self.main_layout.insertWidget(self.main_layout.indexOf(self.scroll) + 1, self.notepad_panel, 1)
+            self.notepad_panel.show()
+        elif self.notepad_panel is not None:
+            self.main_layout.removeWidget(self.notepad_panel)
+            self.notepad_panel.hide()
+            self.notepad_panel.deleteLater()
+            self.notepad_panel = None
+        if self.mode == 'earnings':
             if self.earnings_panel is None:
                 from earnings import EarningsPanel, EarningsStore
                 self.earnings_panel = EarningsPanel(EarningsStore(self.earnings_settings),
@@ -1305,7 +1331,7 @@ class CarleoneWindow(QMainWindow):
         self.search_timer.stop()
         self.load_timer.stop()
         self.update_section_visibility()
-        if self.mode == 'earnings':
+        if self.mode in ('earnings', 'notepad'):
             self.filtered_articles = []
             self.rendered_count = 0
             self.search_index = {}
@@ -1318,6 +1344,8 @@ class CarleoneWindow(QMainWindow):
         matches = []
 
         records = self.current_records()
+        law_scores = (self.environments[self.mode].law_search.scores(self.search.text())
+                      if self.mode == 'laws' else None)
         for article, searchable_text in self.search_index.get((self.server.currentData(), self.mode), []):
             if self.suspect_button.isChecked() and article_key(article) not in self.selected_suspect_keys():
                 continue
@@ -1330,13 +1358,15 @@ class CarleoneWindow(QMainWindow):
             ):
                 continue
 
-            if not all(word in searchable_text for word in words):
+            if (id(article) not in law_scores if law_scores is not None
+                    else not all(word in searchable_text for word in words)):
                 continue
 
             matches.append(article)
 
         matches.sort(key=lambda article: (
             article_search_priority(article, number),
+            law_scores.get(id(article), 0) if law_scores is not None else 0,
             self.mode == "rules" and article["number"].startswith("Справка"),
         ))
         self._loading_results = True
