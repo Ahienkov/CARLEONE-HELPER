@@ -16,6 +16,10 @@ def build(version, repository):
         sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--windowed',
         '--name', 'GTA 5 RP HELPER', '--icon', str(ROOT / 'assets/app-icon.ico'),
         '--distpath', str(ROOT / 'build/portable'), '--workpath', str(ROOT / 'build/pyinstaller'),
+        # main.py is loaded through runpy, so PyInstaller cannot discover these
+        # on-demand sections (including earnings' standard-library uuid dependency).
+        '--hidden-import', 'earnings', '--hidden-import', 'reselling',
+        '--hidden-import', 'notepad', '--hidden-import', 'law_search',
         '--specpath', str(ROOT / 'build'), str(ROOT / 'bootstrap.py'),
     ], cwd=ROOT, check=True)
     application = ROOT / 'build/portable/GTA 5 RP HELPER'
