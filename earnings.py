@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QDateEdit, QDoubleSpinBox, QFr
                                QLabel, QLineEdit, QPushButton, QTableWidget,
                                QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 from dark_combo import DarkComboBox
+from workspace_widgets import MetricLabel, LedgerTable
+
 from i18n import tr
 
 
@@ -69,52 +71,59 @@ class EarningsPanel(QWidget):
         super().__init__(parent)
         self.store, self.server = store, None
         self.setStyleSheet('''
-            QDoubleSpinBox, QDateEdit { background: #14181e; color: #e5e7eb;
-                border: 1px solid #56616c; border-radius: 8px; padding: 6px; }
+            QDoubleSpinBox, QDateEdit { background: #131313; color: #f4f4f4;
+                border: 1px solid #303030; border-radius: 8px; padding: 6px; }
             QLineEdit { padding: 7px 10px; font-size: 15px; }
             QComboBox { padding: 6px 10px; }
-            QCalendarWidget QWidget { background: #1b2229; color: #d9dcdf; }
-            QCalendarWidget QAbstractItemView { background: #14181e; color: #d9dcdf;
-                selection-background-color: #344c61; }
+            QCalendarWidget QWidget { background: #171717; color: #eeeeee; }
+            QCalendarWidget QAbstractItemView { background: #131313; color: #eeeeee;
+                selection-background-color: #ffd447; }
         ''')
         self.root_layout = QVBoxLayout(self)
         self.root_layout.setContentsMargins(0, 0, 0, 0)
         self.root_layout.setSpacing(6)
         self.summary_bar = QFrame()
         self.summary_bar.setObjectName('overall_summary')
-        self.summary_bar.setStyleSheet('QFrame#overall_summary { background: #1b2229; border-radius: 8px; }')
+        self.summary_bar.setStyleSheet('QFrame#overall_summary { background: transparent; }')
         summary = QHBoxLayout(self.summary_bar)
-        summary.setContentsMargins(10, 8, 10, 8)
+        summary.setContentsMargins(0, 0, 0, 10)
+        summary.setSpacing(12)
         summary_title = QLabel(tr('Общий итог'))
         summary_title.setStyleSheet('font-weight: bold;')
-        summary.addWidget(summary_title)
-        self.total_income, self.total_expense, self.total_balance = QLabel(), QLabel(), QLabel()
+        summary_title.hide()
+        self.total_income, self.total_expense, self.total_balance = MetricLabel('#9cbfa8'), MetricLabel('#cf999b'), MetricLabel()
         for label in (self.total_income, self.total_expense, self.total_balance):
             label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             summary.addWidget(label, 1)
         self.root_layout.addWidget(self.summary_bar)
         self.tabs = QTabWidget()
+        self.tabs.tabBar().setDrawBase(False)
         self.tabs.setStyleSheet('''
             QTabWidget::pane { border: none; }
-            QTabBar::tab { background: #171d23; color: #a0a8b1; padding: 6px 16px;
-                border: 1px solid #34404c; border-radius: 6px; margin-right: 6px; }
-            QTabBar::tab:selected { background: #344c61; color: #f1f4f7; }
+            QTabBar::tab { background: #171717; color: #949494; padding: 9px 16px;
+                border: 1px solid #303030; border-radius: 6px; margin-right: 6px; }
+            QTabBar::tab:selected { background: #302a1e; color: #f5ce66; border-color: #4b4027; }
         ''')
         self.income_tab = QWidget()
         self.tabs.addTab(self.income_tab, tr('Доходы'))
         self.root_layout.addWidget(self.tabs, 1)
         layout = QVBoxLayout(self.income_tab)
         layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(12)
         title = QLabel(tr('Учёт доходов и расходов'))
         title.setStyleSheet('font-size: 18px; font-weight: bold;')
-        layout.addWidget(title)
+        title.hide()
         totals = QHBoxLayout()
         self.income, self.expense, self.balance = QLabel(), QLabel(), QLabel()
         for label in (self.income, self.expense, self.balance):
-            label.setStyleSheet('padding: 8px; background: #1b2229; border-radius: 8px;')
+            label.setStyleSheet('padding: 8px; background: #171717; border-radius: 8px;')
             totals.addWidget(label, 1)
-        layout.addLayout(totals)
+        for label in (self.income, self.expense, self.balance):
+            label.hide()
+        self.metric_details = QWidget(self.income_tab)
+        self.metric_details.setLayout(totals)
+        self.metric_details.hide()
+        self.summary_bar.setToolTip(tr('Общий итог доходов и перекупства за выбранный период.'))
         periods = QHBoxLayout()
         self.period = DarkComboBox()
         for label, value in (('За всё время', 'all'), ('Сегодня', 'today'), ('За 7 дней', 'week'),
@@ -165,6 +174,7 @@ class EarningsPanel(QWidget):
         self.description.setPlaceholderText(tr('Комментарий (необязательно)'))
         self.description.setMaxLength(500)
         self.add_button = QPushButton(tr('Добавить'))
+        self.add_button.setObjectName('primaryAction')
         self.add_button.clicked.connect(self.add_entry)
         form.addWidget(self.kind)
         form.addWidget(self.amount)
@@ -176,7 +186,7 @@ class EarningsPanel(QWidget):
         self.error.setStyleSheet('color: #efaaa1;')
         self.error.hide()
         layout.addWidget(self.error)
-        self.table = QTableWidget(0, 4)
+        self.table = LedgerTable(0, 4)
         self.table.setHorizontalHeaderLabels([tr('Дата'), tr('Тип операции'), tr('Комментарий'), tr('Сумма')])
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -186,20 +196,21 @@ class EarningsPanel(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setStyleSheet('''
-            QTableWidget { background: #14181e; alternate-background-color: #1b2229;
-                gridline-color: #34404c; border: 1px solid #56616c; border-radius: 8px; }
+            QTableWidget { background: #131313; alternate-background-color: #171717;
+                gridline-color: #303030; border: 1px solid #303030; border-radius: 8px; }
             QTableWidget::item { padding: 8px; }
-            QTableWidget::item:selected { background: #344c61; }
-            QHeaderView::section { background: #242c32; color: #d9dcdf; padding: 10px;
-                border: none; border-bottom: 1px solid #56616c; }
-            QDoubleSpinBox { background: #14181e; padding: 8px; }
+            QTableWidget::item:selected { background: #302a1e; color: #f5ce66; border-color: #4b4027; }
+            QHeaderView::section { background: #1c1c1e; color: #83858d; padding: 12px;
+                border: none; border-bottom: 1px solid #303030; }
+            QDoubleSpinBox { background: #131313; padding: 8px; }
         ''')
-        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(False)
         layout.addWidget(self.table, 1)
         bottom = QHBoxLayout()
         hint = QLabel(tr('Записи сохраняются только на этом компьютере, отдельно для каждого сервера.'))
         hint.setWordWrap(True)
-        hint.setStyleSheet('font-size: 12px; color: #a0a8b1;')
+        hint.setStyleSheet('font-size: 12px; color: #949494;')
         bottom.addWidget(hint, 1)
         self.remove_button = QPushButton(tr('Удалить запись'))
         self.remove_button.setEnabled(False)

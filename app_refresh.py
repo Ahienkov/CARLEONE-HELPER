@@ -4,10 +4,14 @@ import runpy
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox
+from dialog_chrome import MessageBox as QMessageBox
+
 from i18n import tr
 
 
 DATA_MODULES = (
+    "server_registry", "server_laws",
+    "community", "ai_search", "ui_icons", "workspace_widgets", "workspace_ui", "app_theme", "dialog_chrome",
     "road_data", "codex_data", "procedure_data", "labor_data", "rules_data", "extra_laws_data",
     "i18n", "penalty_data", "suspect_selection", "dark_combo", "hotkey_config", "app_settings", "window_hotkey", "law_search", "section_environment", "earnings", "reselling", "notepad",
 )
@@ -25,6 +29,7 @@ def reload_application(window):
             "geometry": window.saveGeometry(), "maximized": window.isMaximized(),
             "suspect_filter": getattr(window, 'suspect_button', None) is not None and window.suspect_button.isChecked(),
             "suspect_filters": dict(getattr(window, 'suspect_filter_modes', {'laws': False, 'rules': False})),
+            "favorite_filters": dict(getattr(window, 'favorite_filter_modes', {})),
             "sections": window.export_section_states() if hasattr(window, 'export_section_states') else None,
         }
         importlib.invalidate_caches()
@@ -41,10 +46,14 @@ def reload_application(window):
         replacement = namespace["CarleoneWindow"](selection_settings=selection_settings,
                                                  initial_mode=state['mode'], section_states=sections,
                                                  earnings_settings=getattr(window, 'earnings_settings', None),
-                                                 notepad_settings=getattr(window, 'notepad_settings', None))
+                                                 notepad_settings=getattr(window, 'notepad_settings', None),
+                                                 favorites_settings=window.favorites_store.settings if hasattr(window, 'favorites_store') else None,
+                                                 preferences=window.preferences)
         replacement.restoreGeometry(state["geometry"])
         replacement.suspect_filter_modes = state['suspect_filters']
         replacement.suspect_button.setChecked(state['suspect_filter'])
+        replacement.favorite_filter_modes = state['favorite_filters']
+        replacement.favorites_button.setChecked(state['favorite_filters'].get(state['mode'], False))
         replacement.law_categories_expanded = state["expanded"]
         replacement.rules_categories_expanded = state["rules_expanded"]
         replacement.expand_categories_button.blockSignals(True)

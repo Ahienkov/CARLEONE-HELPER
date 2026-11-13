@@ -19,10 +19,10 @@ class ComboItemDelegate(QStyledItemDelegate):
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         if selected or hovered:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor('#344c61' if selected else '#283743'))
+            painter.setBrush(QColor('#ffd447' if selected else '#262626'))
             painter.drawRoundedRect(option.rect.adjusted(4, 2, -4, -2), 6, 6)
         painter.setFont(option.font)
-        painter.setPen(QColor('#f1f4f7' if selected else '#d9e0e7'))
+        painter.setPen(QColor('#131313' if selected else '#dedede'))
         text_rect = option.rect.adjusted(14, 0, -14, 0)
         text = option.fontMetrics.elidedText(option.text, Qt.TextElideMode.ElideRight, text_rect.width())
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
@@ -40,9 +40,9 @@ class DarkComboBox(QComboBox):
         self.view().setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.view().setStyleSheet('''
             QListView {
-                background-color: #1b2229;
-                color: #d9e0e7;
-                border: 1px solid #56616c;
+                background-color: #171717;
+                color: #dedede;
+                border: 1px solid #303030;
                 border-radius: 9px;
                 padding: 4px 0px;
                 outline: none;
@@ -52,11 +52,11 @@ class DarkComboBox(QComboBox):
         popup.setObjectName('combo_popup')
         palette = popup.palette()
         for role in (QPalette.ColorRole.Window, QPalette.ColorRole.Base, QPalette.ColorRole.Button):
-            palette.setColor(role, QColor('#1b2229'))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor('#e0e4e8'))
+            palette.setColor(role, QColor('#171717'))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor('#eeeeee'))
         popup.setPalette(palette)
         popup.setAutoFillBackground(True)
-        popup.setStyleSheet('QFrame#combo_popup { background-color: #1b2229; border: none; }')
+        popup.setStyleSheet('QFrame#combo_popup { background-color: #171717; border: none; }')
 
     def showPopup(self):
         super().showPopup()

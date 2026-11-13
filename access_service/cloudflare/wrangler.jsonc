@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "carleone-accounts",
+  "account_id": "d9ca58eef293f962c1487bd42c8d8955",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-30",
+  "workers_dev": true,
+  "preview_urls": false,
+  // The service has no paid-plan dependency. Never log OAuth callback URLs.
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+    "traces": { "enabled": false }
+  },
+  "ai": { "binding": "AI" },
+  "vars": {
+    "ACCESS_PUBLIC_URL": "https://carleone-accounts.ahienkov.workers.dev",
+    "DISCORD_CLIENT_ID": "1570581256754827326",
+    "AI_SEARCH_ENABLED": "true",
+    "AI_IMPORT_ENABLED": "false"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "carleone-accounts",
+      "database_id": "cb0b4cb8-d653-4505-8324-df1d9d1e3403",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": { "crons": ["17 * * * *"] }
+}

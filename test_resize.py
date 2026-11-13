@@ -1,10 +1,10 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton
 
 from main import CarleoneWindow, RESIZE_SETTLE_MS
 
@@ -24,6 +24,35 @@ class ResizeTests(unittest.TestCase):
     def tearDown(self):
         self.window.close()
         self.window.deleteLater()
+
+    def test_sidebar_keeps_controls_readable_during_resize_with_account(self):
+        self.window.close()
+        self.window.deleteLater()
+        with patch.object(self.app, 'discord_access_manager', Mock(), create=True):
+            self.window = w = CarleoneWindow()
+            w.show()
+            for width, height in [(1160, 800), (920, 600), (1100, 699), (1100, 701),
+                                  (1500, 900), (920, 600), (1160, 800)]:
+                w.resize(width, height)
+                self.app.processEvents()
+                self.assertEqual(w.height(), height)
+                self.assertEqual(w.sidebar.width(), 218)
+                self.assertFalse(w.nav_caption.isHidden())
+                self.assertFalse(w.author.isHidden())
+                for button in w.nav_buttons.values():
+                    self.assertFalse(button.isHidden())
+                    self.assertEqual(button.height(), 44)
+                    option = QStyleOptionButton()
+                    button.initStyleOption(option)
+                    contents = button.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, button)
+                    self.assertGreaterEqual(contents.height(), button.fontMetrics().height())
+                    self.assertGreaterEqual(contents.width(), button.fontMetrics().horizontalAdvance(button.text()) + 28)
+                if height == 600:
+                    self.assertGreater(w.sidebar_scroll.verticalScrollBar().maximum(), 0)
+                    w.sidebar_scroll.ensureWidgetVisible(w.account_button, 0, 0)
+                    self.app.processEvents()
+                    point = w.account_button.mapTo(w.sidebar_scroll.viewport(), w.account_button.rect().center())
+                    self.assertTrue(w.sidebar_scroll.viewport().rect().contains(point))
 
     def test_rapid_resize_reflows_content_once_after_settling(self):
         w = self.window

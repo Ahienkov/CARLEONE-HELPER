@@ -9,7 +9,7 @@ from bootstrap import verify_distribution
 
 class DistributionTests(unittest.TestCase):
     def test_all_packaged_sections_and_uuid_operations(self):
-        self.assertEqual(verify_distribution(), ['laws', 'rules', 'earnings', 'notepad'])
+        self.assertEqual(verify_distribution(), ['laws', 'rules', 'earnings', 'notepad', 'ai'])
 
     def test_missing_lazy_dependency_fails_distribution_check(self):
         from main import CarleoneWindow

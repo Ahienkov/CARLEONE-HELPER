@@ -31,13 +31,15 @@ def parse_rules(text):
 
 
 def compile_rules(source):
-    if source.get("server_id") != "murrieta":
+    from server_registry import SERVER_NAMES
+    server_id = source.get("server_id")
+    if server_id not in SERVER_NAMES:
         raise ValueError("Wrong server snapshot")
     documents = []
     server_topic_urls = set(source["server_topic_urls"])
     for item in source["documents"]:
         document = {key: item[key] for key in ("title", "category", "source_url", "checked_at")}
-        scope = "Murrieta" if item["source_url"] in server_topic_urls else "Правила проекта"
+        scope = SERVER_NAMES[server_id] if item["source_url"] in server_topic_urls else "Правила проекта"
         document["topic_id"] = item["source_url"].rstrip("/").rsplit(".", 1)[-1]
         document["topic_title"] = f"{item['title']} · {scope}"
         if "PVP" in item["title"]:
@@ -54,7 +56,7 @@ def compile_rules(source):
         if not document["rules"]:
             raise ValueError(f"Empty topic: {item['title']}")
         documents.append(document)
-    return {"server_id": "murrieta", "documents": documents}
+    return {"server_id": server_id, "documents": documents}
 
 
 def build():

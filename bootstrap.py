@@ -24,7 +24,14 @@ def verify_distribution(root=ROOT):
     verified = []
     with tempfile.TemporaryDirectory(prefix='carleone-self-test-') as directory:
         settings = QtCore.QSettings(str(Path(directory) / 'test.ini'), QtCore.QSettings.Format.IniFormat)
-        for mode in ('laws', 'rules', 'earnings', 'notepad'):
+        for mode in ('laws', 'rules', 'earnings', 'notepad', 'ai'):
+            if mode == 'ai':
+                import ai_search
+                original_client = ai_search.AiClient
+                class OfflineAiClient:
+                    def post(self, route, data=None):
+                        return {'status': 'ok', 'quota': {'limit': 5, 'remaining': 5}}
+                ai_search.AiClient = OfflineAiClient
             window = namespace['CarleoneWindow'](initial_mode=mode, selection_settings=settings,
                                                  earnings_settings=settings, notepad_settings=settings)
             try:
@@ -50,8 +57,14 @@ def verify_distribution(root=ROOT):
                     panel.editor.setPlainText('Проверка сборки')
                     if not panel.flush() or panel.store.load()['tabs'][0]['text'] != 'Проверка сборки':
                         raise RuntimeError('Packaged notepad could not save')
+                if mode == 'ai':
+                    if window.ai_panel is None or window.search.isVisible():
+                        raise RuntimeError('Dedicated AI section missing')
+                    window.ai_panel.stop()
                 verified.append(mode)
             finally:
+                if mode == 'ai':
+                    ai_search.AiClient = original_client
                 window.close()
                 window.deleteLater()
                 QtCore.QCoreApplication.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)

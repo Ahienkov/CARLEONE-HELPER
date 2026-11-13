@@ -1,6 +1,9 @@
 name: Publish GTA 5 RP HELPER
 
 on:
+  push:
+    branches: [main]
+    paths: [version.json]
   workflow_dispatch:
     inputs:
       version:
@@ -17,6 +20,7 @@ permissions:
 
 jobs:
   release:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -25,6 +29,13 @@ jobs:
       REPLACE_EXISTING: ${{ inputs.replace_existing }}
     steps:
       - uses: actions/checkout@v7
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $version = $env:RELEASE_VERSION
+          if (-not $version) { $version = (Get-Content -LiteralPath version.json -Raw | ConvertFrom-Json).version }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
+          "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -33,6 +44,17 @@ jobs:
         run: python -m pip install -r requirements.txt pyinstaller==6.22.3
       - name: Run tests
         run: python -m unittest discover -p "test_*.py"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: access_service/cloudflare/package-lock.json
+      - name: Verify account and AI service
+        working-directory: access_service/cloudflare
+        run: |
+          npm ci
+          npm test
+          npm run build
       - name: Build and verify Windows distribution
         run: python launcher/build_portable.py --version "$env:RELEASE_VERSION" --repository "$env:GITHUB_REPOSITORY"
       - name: Publish release
@@ -46,6 +68,7 @@ jobs:
           Existing installations check for updates on startup and when clicking the refresh button.
           This build runs with normal user permissions. Running as administrator is optional.
           "@
+          if (Test-Path -LiteralPath "release_notes.json") { $releaseNotes = Get-Content -LiteralPath "release_notes.json" -Raw | ConvertFrom-Json; $entry = $releaseNotes.PSObject.Properties[$env:RELEASE_VERSION]; if ($entry) { $notes = $entry.Value } }
           $notes | Set-Content -LiteralPath release-notes.txt -Encoding utf8
           $tag = "v$env:RELEASE_VERSION"
           $windows = "releases/$env:RELEASE_VERSION/GTA-5-RP-HELPER-Windows-$env:RELEASE_VERSION.zip"

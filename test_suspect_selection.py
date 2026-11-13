@@ -98,7 +98,7 @@ class SuspectSelectionTests(unittest.TestCase):
         self.assertEqual(w.selected_suspect_keys(), set())
         rule = next(r for r in w.current_records() if not r['number'].startswith('Справка'))
         w.toggle_suspect_article(article_key(rule))
-        self.assertEqual(w.suspect_button.text(), 'Нарушения игрока (1)')
+        self.assertEqual(w.suspect_button.accessibleName(), 'Нарушения игрока (1)')
         w.suspect_button.click()
         self.assertEqual([article_key(r) for r in w.filtered_articles], [article_key(rule)])
         self.assertIsNotNone(w.results_layout.itemAt(0).widget().findChild(QPushButton, 'suspect_add'))
@@ -107,7 +107,7 @@ class SuspectSelectionTests(unittest.TestCase):
         w.mode_selector.setCurrentIndex(0)
         self.assertEqual(w.selected_suspect_keys(), {self.key})
         self.assertTrue(w.suspect_button.isChecked())
-        self.assertEqual(w.suspect_button.text(), 'Нарушения подозреваемого (1)')
+        self.assertEqual(w.suspect_button.accessibleName(), 'Нарушения подозреваемого (1)')
 
     def test_equal_rule_numbers_in_different_topics_are_independent(self):
         w = self.window

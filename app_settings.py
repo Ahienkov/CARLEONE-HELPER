@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 from hotkey_config import parse_hotkey, event_hotkey, display_hotkey
 from i18n import LANGUAGES, tr
 from dark_combo import DarkComboBox
+from dialog_chrome import ChromeDialog, MessageBox as QMessageBox
 
 
 DEFAULTS = {'hotkey': 'F4', 'background_opacity': 95, 'always_on_top': True, 'check_on_startup': True, 'language': 'ru'}
@@ -45,7 +46,7 @@ class SettingsStore:
             raise OSError(tr('Не удалось сохранить настройки на этом компьютере.'))
 
 
-class HotkeyCaptureDialog(QDialog):
+class HotkeyCaptureDialog(ChromeDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.key_name = None
@@ -53,9 +54,7 @@ class HotkeyCaptureDialog(QDialog):
         self.setWindowTitle(tr('Выберите клавишу или сочетание'))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setMinimumWidth(440)
-        self.setStyleSheet('QDialog { background-color: #161b20; }')
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout = self.content_layout
         layout.setSpacing(20)
         self.prompt = QLabel(tr('Нажмите клавишу или сочетание клавиш'))
         self.prompt.setWordWrap(True)
@@ -132,16 +131,14 @@ class HotkeyButton(QPushButton):
             self.set_hotkey(dialog.key_name)
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(ChromeDialog):
     def __init__(self, values, on_save, parent=None):
         super().__init__(parent)
         self.on_save = on_save
         self.setWindowTitle(tr('Настройки GTA 5 RP HELPER'))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setMinimumWidth(470)
-        self.setStyleSheet('QDialog { background-color: #161b20; }')
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout = self.content_layout
         layout.setSpacing(20)
         title = QLabel(tr('Настройки'))
         title.setStyleSheet('font-size: 22px; font-weight: bold;')

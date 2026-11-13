@@ -8,7 +8,7 @@ from PySide6.QtCore import QObject, QTimer, Signal, QProcess, QProcessEnvironmen
 from PySide6.QtWidgets import QApplication
 from shiboken6 import isValid
 
-from forum_sync import ForumSync
+from forum_sync import ForumSync, ForumAccessError
 from software_update import check_for_update
 
 
@@ -99,6 +99,8 @@ class ForumUpdates(QObject):
             else:
                 result = ForumSync(stop_event=self.stopping, progress=self.safe_progress).run()
                 result['application'] = application
+        except ForumAccessError as error:
+            result = {'access_required': str(error), 'application': application}
         except Exception as error:
             result = {"error": str(error), 'application': application}
         if not self.stopping.is_set():
@@ -126,7 +128,13 @@ class ForumUpdates(QObject):
                 self.detail = 'Новая версия применится при следующем запуске приложения.'
                 self.update_label()
             return
-        if "error" in result:
+        if 'access_required' in result:
+            self.text = 'Форум: доступ ограничен'
+            self.detail = (
+                'Используется сохранённая база законов и правил. Онлайн-актуальность не проверена.\n'
+                + result['access_required']
+            )
+        elif "error" in result:
             self.text = "Форум: ошибка проверки"
             self.detail = "Используется сохранённая база. Повторить проверку можно кнопкой ↻.\n" + result["error"]
         else:

@@ -5,6 +5,8 @@ from PySide6.QtCore import QSettings
 
 
 def article_key(article):
+    if article.get('document_id'):
+        return 'Закон:' + article['document_id'], article['record_id']
     if article.get('kind') == 'rule':
         # Rule numbers repeat across topics, and sometimes within a topic.
         topic = article.get('topic_id', article.get('source_url', article['title']))
@@ -14,12 +16,15 @@ def article_key(article):
 
 
 class SuspectStore:
+    storage_key = 'suspect_articles'
+    save_error = 'Не удалось сохранить список нарушений.'
+
     def __init__(self, settings=None):
         self.settings = settings if settings is not None else QSettings('CARLEONE', 'HELPER')
 
     def load(self):
         try:
-            value = json.loads(self.settings.value('suspect_articles', '{}', type=str))
+            value = json.loads(self.settings.value(self.storage_key, '{}', type=str))
             if not isinstance(value, dict):
                 return {}
             return {server: {tuple(key) for key in keys
@@ -31,7 +36,12 @@ class SuspectStore:
 
     def save(self, selections):
         value = {server: sorted(keys) for server, keys in selections.items()}
-        self.settings.setValue('suspect_articles', json.dumps(value, ensure_ascii=False))
+        self.settings.setValue(self.storage_key, json.dumps(value, ensure_ascii=False))
         self.settings.sync()
         if self.settings.status() != QSettings.Status.NoError:
-            raise OSError('Не удалось сохранить список нарушений.')
+            raise OSError(self.save_error)
+
+
+class FavoritesStore(SuspectStore):
+    storage_key = 'favorite_articles'
+    save_error = 'Не удалось сохранить избранное.'

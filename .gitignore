@@ -12,3 +12,11 @@ dist/
 *.pem
 .env
 .hotkey-debug.jsonl*
+.discord-session.*
+access_service/*.sqlite3*
+access_service/cloudflare/node_modules/
+access_service/cloudflare/.wrangler/
+access_service/cloudflare/dist/
+access_service/cloudflare/.dev.vars
+access_service/cloudflare/.env*
+!access_service/cloudflare/.dev.vars.example

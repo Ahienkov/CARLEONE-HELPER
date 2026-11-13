@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QTabBar
 
 from main import CarleoneWindow
 from notepad import NotepadStore
@@ -104,6 +104,36 @@ class NotepadTests(unittest.TestCase):
         self.assertEqual(panel.editor.toPlainText(), 'Сохранить')
         panel.remove_tab(0)
         self.assertEqual(len(NotepadStore(self.settings).load()['tabs']), 1)
+
+    def test_custom_tab_close_respects_confirmation_and_preserves_text(self):
+        panel = self.window.notepad_panel
+        panel.editor.setPlainText('keep first note')
+        panel.add_tab()
+        close = panel.tabs.tabButton(1, QTabBar.ButtonPosition.RightSide)
+        self.assertIsNotNone(close)
+        self.assertFalse(close.icon().isNull())
+        with patch('notepad.QMessageBox.question', return_value=QMessageBox.StandardButton.No):
+            close.click()
+        self.assertEqual(panel.tabs.count(), 2)
+        with patch('notepad.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes):
+            close.click()
+        self.assertEqual(panel.tabs.count(), 1)
+        self.assertEqual(panel.editor.toPlainText(), 'keep first note')
+
+    def test_note_tab_labels_keep_their_width_in_a_small_window(self):
+        panel = self.window.notepad_panel
+        for _ in range(5):
+            panel.add_tab()
+        self.window.resize(920, 600)
+        self.window.show()
+        self.app.processEvents()
+        for index in range(panel.tabs.count()):
+            label_width = panel.tabs.fontMetrics().horizontalAdvance(panel.tabs.tabText(index))
+            self.assertGreaterEqual(panel.tabs.tabRect(index).width(), label_width + 64)
+        for index in reversed(range(panel.tabs.count())):
+            panel.tabs.setCurrentIndex(index)
+            self.app.processEvents()
+            self.assertEqual(panel.tabs.currentIndex(), index)
 
     def test_invalid_saved_document_is_not_overwritten(self):
         self.settings.setValue('notepad/v2/document', '{broken')

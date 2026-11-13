@@ -3,13 +3,14 @@ from dataclasses import asdict, dataclass, field
 
 
 def load_section(server_id, mode):
-    if mode in ('earnings', 'notepad'):
-        return []
-    if server_id != 'murrieta':
+    if mode in ('earnings', 'notepad', 'ai'):
         return []
     if mode == 'rules':
         from rules_data import load_rules
         return load_rules(server_id)
+    if server_id != 'murrieta':
+        from server_laws import load_server_laws
+        return load_server_laws(server_id)
     from codex_data import load_articles
     from road_data import load_road_articles
     from procedure_data import load_procedure_articles

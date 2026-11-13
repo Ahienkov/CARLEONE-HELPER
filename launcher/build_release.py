@@ -4,11 +4,13 @@ import hashlib
 import json
 import re
 import zipfile
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 
 def build_release(root, download_url, version=None):
@@ -26,6 +28,12 @@ def build_release(root, download_url, version=None):
     files = [p for p in root.glob("*.py") if not p.name.startswith("test_")]
     files += list(root.glob("*_source.json"))
     files += list((root / "rules").glob("*.json"))
+    files += list((root / "laws").glob("*.json"))
+    access_config = root / 'discord_access.json'
+    if access_config.exists():
+        from discord_access import load_config
+        load_config(root)
+        files.append(access_config)
     files += [p for p in (root / "assets").iterdir() if p.suffix.lower() in (".png", ".ico")]
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:
         package.writestr("version.json", json.dumps(metadata, ensure_ascii=False, indent=2))

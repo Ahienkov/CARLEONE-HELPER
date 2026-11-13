@@ -33,6 +33,10 @@ CODE_LOADERS = (
 )
 
 
+class ForumAccessError(RuntimeError):
+    """Forum login/access restrictions are separate from invalid downloaded data."""
+
+
 def read_json(path):
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
@@ -109,6 +113,12 @@ class ForumSync:
             raise InterruptedError("Проверка остановлена.")
         if url not in self.cache:
             response = self.session.get(url, timeout=(5, 20))
+            if response.status_code in (401, 403):
+                raise ForumAccessError(
+                    f'Форум ограничил доступ к разделу (HTTP {response.status_code}). '
+                    'Вход в браузере не авторизует хелпер. '
+                    f'Онлайн-проверка не выполнена: {url}'
+                )
             response.raise_for_status()
             if urlparse(response.url).hostname != "forum.gta5rp.com":
                 raise ValueError("Форум перенаправил запрос на другой сайт.")

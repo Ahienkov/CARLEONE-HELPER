@@ -7,21 +7,37 @@ import zipfile
 from pathlib import Path
 
 from build_release import ROOT, build_release
+sys.path.insert(0, str(ROOT))
 
 
 def build(version, repository):
     url = f'https://github.com/{repository}/releases/download/v{version}/carleone-helper-{version}.zip'
     update_zip, manifest = build_release(ROOT, url, version)
+    # PyInstaller resolves native dependencies using PATH. Developer tools such
+    # as Poppler ship an incompatible icuuc.dll under that same name; Qt uses
+    # the Windows ICU API instead. Keep unrelated tool DLLs out of discovery.
+    environment = dict(os.environ)
+    if sys.platform == 'win32':
+        import PySide6
+        import shiboken6
+        windows = Path(os.environ.get('SystemRoot', r'C:\Windows'))
+        environment['PATH'] = os.pathsep.join(str(path) for path in (
+            Path(sys.executable).parent, Path(sys.base_prefix),
+            Path(sys.base_prefix) / 'DLLs', Path(PySide6.__file__).parent,
+            Path(shiboken6.__file__).parent, windows / 'System32', windows,
+        ))
     subprocess.run([
-        sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onedir', '--windowed',
+        sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--windowed',
         '--name', 'GTA 5 RP HELPER', '--icon', str(ROOT / 'assets/app-icon.ico'),
         '--distpath', str(ROOT / 'build/portable'), '--workpath', str(ROOT / 'build/pyinstaller'),
         # main.py is loaded through runpy, so PyInstaller cannot discover these
         # on-demand sections (including earnings' standard-library uuid dependency).
+        '--hidden-import', 'main', '--hidden-import', 'ai_search',
+        '--hidden-import', 'discord_access', '--hidden-import', 'discord_session',
         '--hidden-import', 'earnings', '--hidden-import', 'reselling',
         '--hidden-import', 'notepad', '--hidden-import', 'law_search',
         '--specpath', str(ROOT / 'build'), str(ROOT / 'bootstrap.py'),
-    ], cwd=ROOT, check=True)
+    ], cwd=ROOT, env=environment, check=True)
     application = ROOT / 'build/portable/GTA 5 RP HELPER'
     with zipfile.ZipFile(update_zip) as package:
         package.extractall(application)

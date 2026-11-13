@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication
 
 from app_refresh import reload_application
+from app_settings import DEFAULTS
 from main import CarleoneWindow
 from window_hotkey import HOTKEY_ID, MOD_NOREPEAT, VK_F4, WM_HOTKEY, WindowHotkey
 
@@ -25,7 +26,7 @@ class HotkeyTests(unittest.TestCase):
         self.api.GetForegroundWindow.return_value = 0
         self.manager = WindowHotkey(self.app, api=self.api)
         self.app.window_hotkey = self.manager
-        self.window = CarleoneWindow()
+        self.window = CarleoneWindow(preferences=DEFAULTS)
         self.window.show()
         self.app.processEvents()
 

@@ -46,7 +46,7 @@ def read_package(payload, manifest):
                     or path.as_posix() != info.filename or stat.S_ISLNK(info.external_attr >> 16)):
                 raise ValueError("Небезопасный путь внутри обновления.")
             allowed = (len(path.parts) == 1 and path.suffix in ('.py', '.json')) or (
-                len(path.parts) == 2 and path.parts[0] in ('assets', 'rules')
+                len(path.parts) == 2 and path.parts[0] in ('assets', 'rules', 'laws')
                 and path.suffix in ('.png', '.ico', '.json'))
             if not allowed or info.filename.casefold() in {name.casefold() for name in files}:
                 raise ValueError("Недопустимый или повторный файл в обновлении.")

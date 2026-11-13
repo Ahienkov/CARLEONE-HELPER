@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QDoubleSpinBox, QHeaderView,
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPushButton,
                                QTableWidget, QTableWidgetItem, QStyledItemDelegate, QVBoxLayout, QWidget)
 from earnings import EarningsStore, money
+from workspace_widgets import LedgerTable
+
 from i18n import tr
 
 
@@ -109,7 +111,7 @@ class ResellingPanel(QWidget):
         totals = QHBoxLayout()
         self.in_stock, self.revenue, self.profit = QLabel(), QLabel(), QLabel()
         for label in (self.in_stock, self.revenue, self.profit):
-            label.setStyleSheet('padding: 8px; background: #1b2229; border-radius: 8px;')
+            label.setStyleSheet('padding: 8px; background: #171717; border-radius: 8px;')
             totals.addWidget(label, 1)
         layout.addLayout(totals)
         form = QHBoxLayout()
@@ -138,17 +140,20 @@ class ResellingPanel(QWidget):
         layout.addLayout(form)
         hint = QLabel(tr('Продажа 0 — товар ещё не продан. Прибыль = продажа − покупка − дополнительные расходы.'))
         hint.setWordWrap(True)
-        hint.setStyleSheet('font-size: 12px; color: #a0a8b1;')
+        hint.setStyleSheet('font-size: 12px; color: #949494;')
         layout.addWidget(hint)
         self.error = QLabel()
         self.error.setWordWrap(True)
         self.error.setStyleSheet('color: #efaaa1;')
         self.error.hide()
         layout.addWidget(self.error)
-        self.table = QTableWidget(0, 7)
+        self.table = LedgerTable(0, 7)
         self.table.setHorizontalHeaderLabels([tr(s) for s in ('Дата покупки', 'Товар', 'Покупка', 'Доп. расходы', 'Продажа', 'Прибыль', 'Статус')])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.empty_title = 'Пока нет сделок'
+        self.table.empty_description = 'Добавьте первую покупку, чтобы следить за расходами и прибылью.'
+        self.table.setShowGrid(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked |
                                    QAbstractItemView.EditTrigger.EditKeyPressed |
                                    QAbstractItemView.EditTrigger.AnyKeyPressed)
@@ -158,15 +163,15 @@ class ResellingPanel(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(42)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.table.setStyleSheet('''QTableWidget { background: #14181e; gridline-color: #34404c;
-            border: 1px solid #56616c; border-radius: 8px; }
-            QTableWidget::item:selected { background: #344c61; }
-            QHeaderView::section { background: #242c32; color: #d9dcdf; padding: 8px; border: none; }''')
+        self.table.setStyleSheet('''QTableWidget { background: #131313; gridline-color: #303030;
+            border: 1px solid #303030; border-radius: 8px; }
+            QTableWidget::item:selected { background: #ffd447; color: #131313; }
+            QHeaderView::section { background: #1c1c1e; color: #83858d; padding: 12px; border: none; }''')
         layout.addWidget(self.table, 1)
         bottom = QHBoxLayout()
         note = QLabel(tr('Период — по дате покупки. Сделки сохраняются отдельно от вкладки «Доходы».'))
         note.setWordWrap(True)
-        note.setStyleSheet('font-size: 12px; color: #a0a8b1;')
+        note.setStyleSheet('font-size: 12px; color: #949494;')
         bottom.addWidget(note, 1)
         self.sell_button = QPushButton(tr('Отметить продажу'))
         self.sell_button.clicked.connect(self.sell_entry)

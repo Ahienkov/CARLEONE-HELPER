@@ -1,0 +1,2 @@
+export const GUILD_ID = '1569352173043589263';
+export const ROLE_ID = '1569352648308686888';

@@ -3,8 +3,8 @@ import re
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QEvent, QSignalBlocker
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QTimer, QEvent, QSignalBlocker, QUrl
+from PySide6.QtGui import QIcon, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -27,24 +27,26 @@ from PySide6.QtWidgets import (
 )
 
 
+from ui_icons import line_icon
+from workspace_ui import install_workspace, sync_workspace
 from rules_data import split_rule_punishment
 from extra_laws_data import EXTRA_LAWS
 from section_environment import SectionEnvironment, SectionState
 from window_hotkey import application_hotkey
 from forum_updates import application_updates
+from dialog_chrome import MessageBox as QMessageBox
+
 from app_settings import SettingsStore, SettingsDialog, validate_preferences
 from i18n import tr, LocalizedLabel
 from penalty_data import punishment_text, penalty_supplement, SOURCE_URL as PENALTY_SOURCE_URL
-from suspect_selection import SuspectStore, article_key
+from suspect_selection import SuspectStore, FavoritesStore, article_key
 from dark_combo import DarkComboBox
+from server_registry import SERVER_NAMES
+import community
 
-SECTION_MODES = (('laws', 'Законы'), ('rules', 'Правила'), ('earnings', 'Заработок'), ('notepad', 'Блокнот'))
+SECTION_MODES = (('laws', 'Законы'), ('rules', 'Правила'), ('earnings', 'Заработок'), ('notepad', 'Блокнот'), ('ai', 'ИИ-поиск'))
 
-SERVER_DATA = {
-    name.lower(): {'name': name, 'laws': [], 'rules': [], 'in_development': True}
-    for name in ('Downtown', 'Eclipse', 'Rockford', 'Redwood', 'Murrieta', 'Chiliad', 'Mirror', 'Blaine')
-}
-SERVER_DATA['murrieta'] = {'name': 'Murrieta'}
+SERVER_DATA = {server_id: {'name': name} for server_id, name in SERVER_NAMES.items()}
 RULE_CATEGORIES = ('Все', 'Общие правила', 'Госорганизации', 'Криминальные организации', 'Неофициальные организации')
 LAW_CATEGORIES = (
     "Все", "Уголовный", "Административный", "Дорожный", "Процессуальный", "Трудовой",
@@ -64,171 +66,7 @@ def searchable_article_text(article):
     )
 
 
-STYLE = """
-QMainWindow {
-    background: transparent;
-}
-QWidget#root {
-    background-color: rgba(18, 22, 25, 242);
-    border: 1px solid rgba(130, 150, 170, 90);
-    border-radius: 20px;
-}
-QWidget {
-    font-family: "Segoe UI";
-    font-size: 15px;
-    color: #d9dcdf;
-}
-QLabel {
-    background: transparent;
-}
-QLineEdit {
-    background-color: #14181e;
-    border: 1px solid #56616c;
-    border-radius: 10px;
-    padding: 13px 16px;
-    color: #e5e7eb;
-    font-size: 18px;
-    selection-background-color: #455c75;
-}
-QLineEdit:focus {
-    border-color: #91a8c1;
-}
-QLabel#brand {
-    font-size: 19px;
-    font-weight: bold;
-    padding: 0px 12px;
-    color: #f1f3f5;
-}
-QPushButton, QToolButton {
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    color: #a0a8b1;
-    padding: 10px 14px;
-}
-QPushButton:hover, QToolButton:hover {
-    background-color: #242c32;
-    color: #ffffff;
-}
-QPushButton:checked, QToolButton:checked {
-    background-color: #555f69;
-    color: #ffffff;
-    font-weight: bold;
-}
-QPushButton:disabled, QToolButton:disabled {
-    color: #555d65;
-}
-QPushButton#category_tab[compact="true"] {
-    font-size: 13px;
-    padding: 7px 10px;
-    border-radius: 8px;
-}
-QFrame#mode_switch {
-    border: 1px solid #56616c;
-    border-radius: 10px;
-}
-QComboBox {
-    background-color: #161b20;
-    border: 1px solid #56616c;
-    border-radius: 9px;
-    padding: 9px 14px;
-    min-width: 155px;
-}
-QComboBox::drop-down {
-    border: none;
-    width: 24px;
-    border-top-right-radius: 9px;
-    border-bottom-right-radius: 9px;
-}
-QScrollArea {
-    border: none;
-    background: transparent;
-}
-QWidget#results {
-    background: transparent;
-}
-QFrame#article_card {
-    background-color: #1b2229;
-    border: 1px solid #64717e;
-    border-radius: 16px;
-}
-QFrame#article_card:hover {
-    border-color: #a1bdd8;
-}
-QPushButton#suspect_filter, QPushButton#suspect_add {
-    font-size: 13px;
-    padding: 6px 10px;
-    border-radius: 8px;
-}
-QPushButton#suspect_add:checked {
-    background-color: #2b4154;
-    border-color: #7197b9;
-    color: #d5e8fa;
-}
-QPushButton#load_more {
-    font-size: 12px;
-    padding: 2px 9px;
-    border-radius: 7px;
-    color: #aab8c6;
-}
-QLabel#article_number {
-    border: 1px solid #56616c;
-    border-radius: 7px;
-    color: #aab4bd;
-    padding: 5px 9px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QLabel#article_title {
-    color: #e0e2e5;
-    font-size: 17px;
-    font-weight: bold;
-}
-QLabel#description {
-    background-color: rgba(160, 170, 180, 25);
-    color: #c5cdd5;
-    border: 1px solid rgba(160, 170, 180, 55);
-    border-radius: 10px;
-    padding: 14px;
-    font-size: 15px;
-}
-QLabel#criminal_punishment {
-    background-color: #211c20;
-    color: #ff6565;
-    border: 1px solid #b34045;
-    border-radius: 10px;
-    padding: 13px;
-}
-QLabel#admin_punishment {
-    background-color: #252019;
-    color: #efb16a;
-    border: 1px solid #a77942;
-    border-radius: 10px;
-    padding: 13px;
-}
-QLabel#status {
-    color: #8d98a3;
-    font-size: 13px;
-}
-QScrollBar:vertical {
-    background: transparent;
-    width: 8px;
-    margin: 0px;
-}
-QScrollBar::handle:vertical {
-    background-color: #46515b;
-    border-radius: 4px;
-    min-height: 30px;
-}
-QScrollBar::add-line:vertical,
-QScrollBar::sub-line:vertical {
-    height: 0px;
-}
-QScrollBar::add-page:vertical,
-QScrollBar::sub-page:vertical {
-    background: transparent;
-}
-"""
+from app_theme import APP_STYLE as STYLE
 
 
 def normalize(text):
@@ -242,6 +80,22 @@ def article_search_priority(article, number):
     if article["number"] == number:
         return 0
     if article["number"].startswith(number + "."):
+        return 1
+    return 2
+
+
+def law_punishment_priority(article):
+    """Order real sanctions before reference text, consistently on every server."""
+    punishment = article.get('punishment', '').strip()
+    informational = (
+        'Общая норма', 'Санкция не выделена', 'Справочная информация',
+    )
+    if (not punishment or punishment.startswith(informational)
+            or article['number'].startswith('Справка')):
+        return 3
+    if article.get('category') == 'Уголовный':
+        return 0
+    if article.get('category') == 'Административный':
         return 1
     return 2
 
@@ -352,12 +206,14 @@ class WindowTitleBar(QWidget):
 
 
 class CarleoneWindow(QMainWindow):
-    def __init__(self, server_data=None, selection_settings=None, initial_mode='laws', section_states=None, earnings_settings=None, notepad_settings=None):
+    def __init__(self, server_data=None, selection_settings=None, initial_mode='laws', section_states=None, earnings_settings=None, notepad_settings=None, favorites_settings=None, preferences=None):
         super().__init__()
         self.settings_store = SettingsStore()
         self.suspect_store = SuspectStore(selection_settings)
         self.suspect_selections = self.suspect_store.load()
-        self.preferences = self.settings_store.load()
+        self.favorites_store = FavoritesStore(favorites_settings if favorites_settings is not None else selection_settings)
+        self.favorite_selections = self.favorites_store.load()
+        self.preferences = validate_preferences(preferences) if preferences is not None else self.settings_store.load()
         QApplication.instance().setApplicationDisplayName('GTA 5 RP HELPER')
         QApplication.instance().setProperty('ui_language', self.preferences['language'])
         flags = Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
@@ -380,10 +236,12 @@ class CarleoneWindow(QMainWindow):
         self._category_layout_signature = None
         self.mode = initial_mode
         self.suspect_filter_modes = {mode: False for mode, _ in SECTION_MODES}
+        self.favorite_filter_modes = {mode: False for mode, _ in SECTION_MODES}
         self.earnings_settings = earnings_settings
         self.earnings_panel = None
         self.notepad_settings = notepad_settings
         self.notepad_panel = None
+        self.ai_panel = None
         self.server_data = {key: dict(value) for key, value in (SERVER_DATA if server_data is None else server_data).items()}
         self._custom_catalog = server_data is not None
         self.environments = {mode: SectionEnvironment(mode, (section_states or {}).get(mode))
@@ -405,8 +263,8 @@ class CarleoneWindow(QMainWindow):
         self.results_width_timer.timeout.connect(self.apply_results_width)
 
         self.setWindowTitle(tr("GTA 5 RP HELPER — помощник GTA 5 RP"))
-        self.resize(1100, 740)
-        self.setMinimumSize(920, 500)
+        self.resize(1160, 800)
+        self.setMinimumSize(920, 600)
         self.setStyleSheet(self.preference_stylesheet())
 
         root = QWidget()
@@ -414,15 +272,24 @@ class CarleoneWindow(QMainWindow):
         root.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self.setCentralWidget(root)
 
-        main_layout = QVBoxLayout(root)
+        self.shell_layout = QVBoxLayout(root)
+        self.shell_layout.setContentsMargins(0, 0, 0, 0)
+        self.shell_layout.setSpacing(0)
+        self.workspace_layout = QHBoxLayout()
+        self.workspace_layout.setContentsMargins(10, 0, 10, 10)
+        self.workspace_layout.setSpacing(0)
+        self.content_surface = QWidget()
+        self.content_surface.setObjectName('workspaceContent')
+        main_layout = QVBoxLayout(self.content_surface)
+        self.workspace_layout.addWidget(self.content_surface, 1)
         self.main_layout = main_layout
-        main_layout.setContentsMargins(20, 20, 20, 14)
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(26, 20, 18, 12)
+        main_layout.setSpacing(14)
 
         self.title_bar = QWidget()
         self.title_bar.setCursor(Qt.CursorShape.ArrowCursor)
         header_layout = QHBoxLayout(self.title_bar)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setContentsMargins(22, 8, 14, 8)
         header_layout.setSpacing(8)
         self.drag_region = WindowTitleBar()
         self.drag_region.setCursor(Qt.CursorShape.SizeAllCursor)
@@ -430,10 +297,10 @@ class CarleoneWindow(QMainWindow):
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(8)
         icon_label = QLabel()
-        icon_label.setPixmap(icon.pixmap(24, 24))
+        icon_label.hide()
         icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         title_layout.addWidget(icon_label)
-        title = QLabel("GTA 5 RP HELPER")
+        title = QLabel("CARLEONE  /  WORKSPACE")
         title.setObjectName("brand")
         title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         title_layout.addWidget(title)
@@ -454,7 +321,7 @@ class CarleoneWindow(QMainWindow):
         ):
             button = QToolButton()
             button.setCursor(Qt.CursorShape.ArrowCursor)
-            button.setIcon(self.style().standardIcon(standard_icon))
+            button.setIcon(line_icon({QStyle.StandardPixmap.SP_TitleBarMinButton: 'minimize', QStyle.StandardPixmap.SP_TitleBarMaxButton: 'maximize', QStyle.StandardPixmap.SP_TitleBarCloseButton: 'close'}[standard_icon], 18))
             button.setFixedSize(32, 28)
             button.setStyleSheet("padding: 0px;")
             button.setProperty('ui_text', name)
@@ -462,7 +329,8 @@ class CarleoneWindow(QMainWindow):
             button.setAccessibleName(tr(name))
             button.clicked.connect(callback)
             header_layout.addWidget(button)
-        main_layout.addWidget(self.title_bar)
+        self.shell_layout.addWidget(self.title_bar)
+        self.shell_layout.addLayout(self.workspace_layout, 1)
         self.top_drag_region = WindowTitleBar(root)
         self.top_drag_region.setCursor(Qt.CursorShape.SizeAllCursor)
         self.drag_region.installEventFilter(self)
@@ -499,6 +367,10 @@ class CarleoneWindow(QMainWindow):
         self.clear_suspect_button.setStyleSheet('padding: 0px; font-size: 20px;')
         self.clear_suspect_button.clicked.connect(self.clear_suspect_selection)
         self.clear_suspect_button.hide()
+        self.favorites_button = QPushButton()
+        self.favorites_button.setObjectName('favorites_filter')
+        self.favorites_button.setCheckable(True)
+        self.favorites_button.clicked.connect(self.toggle_favorites_filter)
         self.settings_button = QToolButton()
         self.settings_button.setText('⚙')
         self.settings_button.setFixedSize(30, 38)
@@ -515,6 +387,7 @@ class CarleoneWindow(QMainWindow):
         suspect_row.setSpacing(6)
         suspect_row.addWidget(self.suspect_button)
         suspect_row.addWidget(self.clear_suspect_button)
+        suspect_row.addWidget(self.favorites_button)
         suspect_row.addStretch()
         self.suspect_row_widget = QWidget()
         self.suspect_row_widget.setLayout(suspect_row)
@@ -602,7 +475,7 @@ class CarleoneWindow(QMainWindow):
 
         self.results_layout = QVBoxLayout(results)
         self.results_layout.setContentsMargins(0, 0, 10, 0)
-        self.results_layout.setSpacing(14)
+        self.results_layout.setSpacing(12)
         self.results_layout.setAlignment(
             Qt.AlignmentFlag.AlignTop
         )
@@ -625,6 +498,7 @@ class CarleoneWindow(QMainWindow):
         footer.setSpacing(8)
         self.left_resize_grip = QSizeGrip(self)
         self.left_resize_grip.setFixedSize(16, 16)
+        self.left_resize_grip.hide()
         footer.addWidget(self.left_resize_grip, alignment=Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignLeft)
 
         self.status = LocalizedLabel()
@@ -652,15 +526,35 @@ class CarleoneWindow(QMainWindow):
         QApplication.instance().setApplicationVersion(version)
         self.author = LocalizedLabel(f'Автор: Lucifer Mentality · Версия {version}')
         self.author.setObjectName('author')
-        self.author.setStyleSheet('color: #8d98a3; font-size: 11px;')
+        self.author.setStyleSheet('color: #868686; font-size: 11px;')
         self.author.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bottom_layout.addWidget(self.author)
+        accounts = getattr(QApplication.instance(), 'discord_access_manager', None)
+        if accounts is not None:
+            self.account_button = account_button = QPushButton('Мой аккаунт')
+            account_button.clicked.connect(accounts.show_account)
+            bottom_layout.addWidget(account_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.discord_button = QPushButton('Discord · CARLEONE HELPER ↗')
+        self.discord_button.setObjectName('discord_community')
+        self.discord_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.discord_button.setToolTip(tr('Новости, обновления и поддержка в Discord'))
+        self.discord_button.setStyleSheet('''
+            QPushButton { background: #262111; color: #ffd447; border: 1px solid #66562a;
+                          border-radius: 8px; padding: 5px 14px; font-size: 12px; }
+            QPushButton:hover { background: #352d13; border-color: #ffd447; color: #ffffff; }
+            QPushButton:pressed { background: #211c0e; }
+        ''')
+        self.discord_button.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(community.DISCORD_INVITE_URL)))
+        self.discord_button.setVisible(bool(community.DISCORD_INVITE_URL))
+        bottom_layout.addWidget(self.discord_button, alignment=Qt.AlignmentFlag.AlignCenter)
         main_layout.addLayout(bottom_layout)
 
         self.search.textChanged.connect(self.schedule_search)
         self.server.currentIndexChanged.connect(self.change_server)
         self.topic.currentIndexChanged.connect(self.update_search)
         self.scroll.verticalScrollBar().valueChanged.connect(self.schedule_load_more)
+        install_workspace(self, top_row, filter_row, bottom_layout)
         self.restore_section_state()
 
     def showEvent(self, event):
@@ -670,10 +564,13 @@ class CarleoneWindow(QMainWindow):
         self.apply_results_width()
         application_hotkey().attach(self, self.preferences['hotkey'])
         application_updates().attach(self)
+        accounts = getattr(QApplication.instance(), 'discord_access_manager', None)
+        if accounts is not None:
+            accounts.attach(self)
 
     def preference_stylesheet(self):
         alpha = round(255 * self.preferences['background_opacity'] / 100)
-        return STYLE.replace('rgba(18, 22, 25, 242)', f'rgba(18, 22, 25, {alpha})')
+        return STYLE.replace('rgba(19, 19, 19, 242)', f'rgba(19, 19, 19, {alpha})')
 
     def open_settings(self):
         existing = getattr(self, 'settings_dialog', None)
@@ -757,17 +654,68 @@ class CarleoneWindow(QMainWindow):
         self.hotkey_hint.retranslate()
         self.forum_status.retranslate()
         self.author.retranslate()
+        self.discord_button.setToolTip(tr('Новости, обновления и поддержка в Discord'))
 
     def selected_suspect_keys(self):
         keys = self.suspect_selections.get(self.server.currentData(), set())
         return {key for key in keys if key[0].startswith('Правило:') == (self.mode == 'rules')}
+
+    def selected_favorite_keys(self):
+        keys = self.favorite_selections.get(self.server.currentData(), set())
+        return {key for key in keys if key[0].startswith('Правило:') == (self.mode == 'rules')}
+
+    def update_favorite_controls(self):
+        selected = self.selected_favorite_keys()
+        count = sum(article_key(article) in selected for article in self.current_records())
+        label = tr('Избранное ({count})', count=count)
+        self.favorites_button.setText(label)
+        self.favorites_button.setAccessibleName(label)
+        self.favorites_button.setToolTip(tr('Показать избранное'))
+        for button in self.scroll.widget().findChildren(QPushButton, 'favorite_add'):
+            key = button.property('article_code'), button.property('article_number')
+            checked = key in selected
+            button.setChecked(checked)
+            button.setText('')
+            action = tr('Убрать из избранного' if checked else 'Добавить в избранное')
+            button.setToolTip(action)
+            button.setAccessibleName(action)
+
+    def toggle_favorite_article(self, key):
+        selected = set(self.selected_favorite_keys())
+        selected.symmetric_difference_update({key})
+        other_mode = self.favorite_selections.get(self.server.currentData(), set()) - self.selected_favorite_keys()
+        selections = {**self.favorite_selections, self.server.currentData(): other_mode | selected}
+        try:
+            self.favorites_store.save(selections)
+        except OSError as error:
+            QMessageBox.warning(self, tr('Не удалось сохранить избранное.'), tr(str(error)))
+            self.update_favorite_controls()
+            return
+        self.favorite_selections = selections
+        if self.favorites_button.isChecked():
+            position = self.scroll.verticalScrollBar().value()
+            self.update_search()
+            self.scroll.verticalScrollBar().setValue(position)
+        else:
+            self.update_favorite_controls()
+
+    def toggle_favorites_filter(self, checked):
+        self.favorite_filter_modes[self.mode] = checked
+        if checked:
+            self.suspect_button.setChecked(False)
+            self.suspect_filter_modes[self.mode] = False
+            with QSignalBlocker(self.search):
+                self.search.clear()
+            self.rebuild_categories()
+        self.update_search()
 
     def update_suspect_controls(self):
         selected = self.selected_suspect_keys()
         count = sum(article_key(article) in selected for article in self.current_records())
         is_rules = self.mode == 'rules'
         name = 'Нарушения игрока ({count})' if is_rules else 'Нарушения подозреваемого ({count})'
-        self.suspect_button.setText(tr(name, count=count))
+        self.suspect_button.setText(tr('Нарушения') + f' ({count})')
+        self.suspect_button.setAccessibleName(tr(name, count=count))
         self.suspect_button.setAccessibleName(tr(name, count=count))
         self.suspect_button.setToolTip(tr('Показать выбранные нарушения игрока' if is_rules else 'Показать выбранные статьи подозреваемого'))
         self.clear_suspect_button.setVisible(self.suspect_button.isChecked() and bool(selected))
@@ -812,6 +760,8 @@ class CarleoneWindow(QMainWindow):
     def toggle_suspect_filter(self, checked):
         self.suspect_filter_modes[self.mode] = checked
         if checked:
+            self.favorites_button.setChecked(False)
+            self.favorite_filter_modes[self.mode] = False
             self.search.blockSignals(True)
             self.search.clear()
             self.search.blockSignals(False)
@@ -840,7 +790,7 @@ class CarleoneWindow(QMainWindow):
             self.server_data['murrieta'] = {'name': catalog['name']}
         if self.server.currentData() != "murrieta":
             return
-        if self.mode in ('earnings', 'notepad'):
+        if self.mode in ('earnings', 'notepad', 'ai'):
             return
         self.environments[self.mode].set_records('murrieta', catalog[self.mode], searchable_article_text)
         self.search_index = {('murrieta', self.mode): self.environments[self.mode].index}
@@ -939,12 +889,14 @@ class CarleoneWindow(QMainWindow):
         count = len(self.filtered_articles)
         noun = tr("правил" if self.mode == "rules" else "статей")
         self.status.setText(tr('Найдено {noun}: {count} · Показано: {shown}', noun=noun, count=count, shown=self.rendered_count))
+        if hasattr(self, "result_badge"):
+            self.result_badge.setText(f"{count} {noun}")
         remaining = count - self.rendered_count
         self.load_more_button.setVisible(remaining > 0)
         self.load_more_button.setText(tr('Показать ещё {count}', count=min(remaining, RESULT_BATCH_SIZE)))
 
     def current_records(self):
-        if self.mode in ('earnings', 'notepad'):
+        if self.mode in ('earnings', 'notepad', 'ai'):
             self.search_index = {}
             return []
         server = self.server.currentData()
@@ -990,7 +942,7 @@ class CarleoneWindow(QMainWindow):
 
     def reflow_categories(self):
         buttons = self.category_group.buttons()
-        available = self.width() - max(self.server.sizeHint().width(), 185) - self.refresh_button.width() - 68
+        available = (self.content_surface.width() if hasattr(self, 'sidebar') else self.width()) - 64
         if self.mode == "rules":
             widths = [button.sizeHint().width() for button in buttons]
             if sum(widths) + max(0, len(buttons) - 1) * 8 <= available:
@@ -1042,7 +994,7 @@ class CarleoneWindow(QMainWindow):
 
     def refresh_category_visibility(self):
         is_laws = self.mode == "laws"
-        overflow = LAW_CATEGORIES[4:] if is_laws else self._overflow_categories
+        overflow = self._overflow_categories
         expanded = bool(overflow) and (self.law_categories_expanded if is_laws else self.rules_categories_expanded)
         self.extra_categories.setVisible(expanded)
         self.expand_categories_button.setVisible(bool(overflow))
@@ -1068,10 +1020,12 @@ class CarleoneWindow(QMainWindow):
             self.extra_category_layout.removeWidget(button)
             button.hide()
             button.deleteLater()
-        if self.mode in ('earnings', 'notepad'):
+        if self.mode in ('earnings', 'notepad', 'ai'):
             names = ()
         elif self.mode == 'laws':
-            names = LAW_CATEGORIES
+            available = dict.fromkeys(a['category'] for a in self.current_records())
+            names = ('Все', *(name for name in LAW_CATEGORIES[1:] if name in available),
+                     *(name for name in available if name not in LAW_CATEGORIES))
         elif self.server_data.get(self.server.currentData(), {}).get('in_development'):
             names = RULE_CATEGORIES
         else:
@@ -1101,13 +1055,15 @@ class CarleoneWindow(QMainWindow):
         self.topic.clear()
         self.topic.addItem(tr("Все темы"), "")
         topics = {}
-        if self.mode == "rules":
+        if self.mode in ("laws", "rules"):
             for rule in self.current_records():
                 if self.category == "Все" or rule["category"] == self.category:
-                    topics[rule.get("topic_id", rule["title"])] = rule["title"]
+                    if self.mode == 'rules' or rule.get('document_id'):
+                        topics[rule.get("topic_id", rule["title"])] = rule.get('topic_title', rule['title'])
         for topic_id, title in topics.items():
             self.topic.addItem(title, topic_id)
-        self.topic.setVisible(self.mode == "rules")
+        self.topic.setVisible(self.mode == "rules" or bool(topics))
+        self.topic.setToolTip(tr('Тема правил') if self.mode == 'rules' else 'Кодекс или закон')
         self.topic.blockSignals(previously_blocked)
 
     def change_mode(self, mode_id):
@@ -1129,8 +1085,10 @@ class CarleoneWindow(QMainWindow):
         self.search_index.clear()
         self.environments[self.mode].unload()
         self.suspect_filter_modes[self.mode] = self.suspect_button.isChecked()
+        self.favorite_filter_modes[self.mode] = self.favorites_button.isChecked()
         self.mode = mode
         self.suspect_button.setChecked(self.suspect_filter_modes.get(mode, False))
+        self.favorites_button.setChecked(self.favorite_filter_modes.get(mode, False))
         self.restore_section_state()
 
     def save_section_state(self):
@@ -1138,7 +1096,8 @@ class CarleoneWindow(QMainWindow):
             server=self.server.currentData(), query=self.search.text(), category=self.category,
             topic=self.topic.currentData() or '', rendered=self.rendered_count,
             scroll=self.scroll.verticalScrollBar().value(),
-            extras=self.earnings_panel.export_view() if self.mode == 'earnings' and self.earnings_panel is not None
+            extras=self.ai_panel.export_view() if self.mode == 'ai' and self.ai_panel is not None
+                   else self.earnings_panel.export_view() if self.mode == 'earnings' and self.earnings_panel is not None
                    else self.environments[self.mode].state.extras)
 
     def export_section_states(self):
@@ -1181,11 +1140,12 @@ class CarleoneWindow(QMainWindow):
                 widget.deleteLater()
 
     def update_section_visibility(self):
-        earnings = self.mode in ('earnings', 'notepad')
-        self.main_layout.setSpacing(6 if earnings else 16)
-        self.main_layout.setContentsMargins(20, 12 if earnings else 20, 20, 8 if earnings else 14)
-        self.suspect_row_widget.setVisible(not earnings)
-        self.earnings_top_spacer.setVisible(earnings)
+        earnings = self.mode in ('earnings', 'notepad', 'ai')
+        self.main_layout.setSpacing(14)
+        self.main_layout.setContentsMargins(26, 18, 18, 12)
+        self.suspect_row_widget.setVisible(False)
+        self.earnings_top_spacer.hide()
+        sync_workspace(self)
         self.server.setVisible(self.mode != 'notepad')
         for widget in (self.search, self.suspect_button, self.scroll, self.status, self.note):
             widget.setVisible(not earnings)
@@ -1195,6 +1155,19 @@ class CarleoneWindow(QMainWindow):
             self.expand_categories_button.hide()
             self.extra_categories.hide()
             self.load_more_button.hide()
+        if self.mode == 'ai':
+            if self.ai_panel is None:
+                from ai_search import AiSearchPanel
+                self.ai_panel = AiSearchPanel(view=self.environments['ai'].state.extras)
+                self.main_layout.insertWidget(self.main_layout.indexOf(self.scroll) + 1, self.ai_panel, 1)
+            self.ai_panel.set_server(self.server.currentData())
+            self.ai_panel.show()
+        elif self.ai_panel is not None:
+            self.ai_panel.stop()
+            self.main_layout.removeWidget(self.ai_panel)
+            self.ai_panel.hide()
+            self.ai_panel.deleteLater()
+            self.ai_panel = None
         if self.mode == 'notepad':
             if self.notepad_panel is None:
                 from notepad import NotepadPanel, NotepadStore
@@ -1224,7 +1197,7 @@ class CarleoneWindow(QMainWindow):
     def align_environment_selectors(self):
         width = max(185, self.mode_selector.sizeHint().width(), self.server.sizeHint().width())
         self.mode_selector.setFixedWidth(width)
-        self.server.setFixedWidth(width)
+        self.server.setFixedWidth(182 if hasattr(self, 'sidebar') else width)
 
     def change_server(self, _index):
         self.rebuild_categories()
@@ -1245,8 +1218,8 @@ class CarleoneWindow(QMainWindow):
         )
 
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(13)
+        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setSpacing(10)
 
         heading_row = QHBoxLayout()
         heading_row.setSpacing(14)
@@ -1273,17 +1246,37 @@ class CarleoneWindow(QMainWindow):
             heading = f"{article['chapter']}\n{heading}"
         if article['number'].startswith("Справка"):
             heading = article['title']
-        title = CopyLabel(
-            heading,
-            "article_title",
-            lambda: self.status.setText("✓ Заголовок скопирован"),
-        )
+        # The catalog and search share the compact view; the original heading
+        # and full forum text remain available in the expandable details.
+        short_title = ' '.join(article.get('short_title', article['title']).split())
+        if len(short_title) > 110:
+            short_title = short_title[:107].rsplit(' ', 1)[0] + '…'
+        toggle = QPushButton()
+        toggle.setObjectName('article_toggle')
+        toggle.setCheckable(True)
+        toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        toggle.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toggle_layout = QHBoxLayout(toggle)
+        toggle_layout.setContentsMargins(0, 0, 0, 0)
+        toggle_layout.setSpacing(10)
+        title = make_label(short_title, 'article_title')
+        title.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        title.setMinimumWidth(0)
+        toggle_layout.addWidget(title, stretch=1)
+        hint = QLabel('↗')
+        hint.setObjectName('article_expand_hint')
+        hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        toggle_layout.addWidget(hint)
 
         heading_row.addWidget(
             number,
             alignment=Qt.AlignmentFlag.AlignTop,
         )
-        heading_row.addWidget(title, stretch=1)
+        category_label = QLabel(tr(article['category']))
+        category_label.setObjectName('articleCategory')
+        heading_row.addWidget(category_label)
+        heading_row.addStretch()
         if not article['number'].startswith('Справка'):
             add_button = QPushButton()
             add_button.setObjectName('suspect_add')
@@ -1300,14 +1293,22 @@ class CarleoneWindow(QMainWindow):
                 add_button.setToolTip(tr('Убрать статью из нарушений' if selected else 'Добавить статью в нарушения'))
             add_button.clicked.connect(lambda _checked=False, key=key: self.toggle_suspect_article(key))
             heading_row.addWidget(add_button, alignment=Qt.AlignmentFlag.AlignTop)
+        favorite = QPushButton()
+        favorite.setIcon(line_icon('favorite', 18))
+        favorite.setFixedSize(26, 26)
+        favorite.setObjectName('favorite_add')
+        favorite.setCheckable(True)
+        key = article_key(article)
+        favorite.setProperty('article_code', key[0])
+        favorite.setProperty('article_number', key[1])
+        favorite.setChecked(key in self.selected_favorite_keys())
+        action = tr('Убрать из избранного' if favorite.isChecked() else 'Добавить в избранное')
+        favorite.setToolTip(action)
+        favorite.setAccessibleName(action)
+        favorite.clicked.connect(lambda _checked=False, key=key: self.toggle_favorite_article(key))
+        heading_row.addWidget(favorite, alignment=Qt.AlignmentFlag.AlignTop)
         card_layout.addLayout(heading_row)
-
-        description = CopyLabel(
-            article["description"],
-            "description",
-            lambda: self.status.setText("✓ Описание скопировано"),
-        )
-        card_layout.addWidget(description)
+        card_layout.addWidget(toggle)
 
         punishment_style = (
             "criminal_punishment"
@@ -1325,13 +1326,48 @@ class CarleoneWindow(QMainWindow):
                 punishment.setToolTip(tr('Нажми, чтобы скопировать этот блок') + '\n' + PENALTY_SOURCE_URL)
             card_layout.addWidget(punishment)
 
+        details = QWidget()
+        details.setObjectName('article_details')
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(0, 2, 0, 0)
+        details_layout.setSpacing(10)
+        details_layout.addWidget(CopyLabel(
+            heading, 'article_full_title',
+            lambda: self.status.setText("✓ Заголовок скопирован"),
+        ))
+        details_layout.addWidget(CopyLabel(
+            article['description'], 'description',
+            lambda: self.status.setText("✓ Описание скопировано"),
+        ))
+        if article.get('source_url'):
+            source = QPushButton('Источник на форуме ↗')
+            source.setObjectName('article_source')
+            source.setToolTip(article['source_url'] + '\nПроверено: ' + article.get('checked_at', '')[:10])
+            source.clicked.connect(lambda _checked=False, url=article['source_url']:
+                                   QDesktopServices.openUrl(QUrl(url)))
+            details_layout.addWidget(source, alignment=Qt.AlignmentFlag.AlignLeft)
+        details.hide()
+        card_layout.addWidget(details)
+
+        def update_expanded(expanded):
+            details.setVisible(expanded)
+            action = tr('Свернуть' if expanded else 'Развернуть')
+            hint.setText('−' if expanded else '↗')
+            toggle.setAccessibleName(action + ': ' + article['title'])
+            toggle.setToolTip(action + ': ' + article['title'])
+            card.updateGeometry()
+            QTimer.singleShot(0, self.apply_results_width)
+
+        toggle.setAccessibleName(tr('Развернуть') + ': ' + article['title'])
+        toggle.setToolTip(tr('Развернуть') + ': ' + article['title'])
+        toggle.toggled.connect(update_expanded)
         return card
 
     def update_search(self, _text=None):
         self.search_timer.stop()
         self.load_timer.stop()
         self.update_section_visibility()
-        if self.mode in ('earnings', 'notepad'):
+        if self.mode in ('earnings', 'notepad', 'ai'):
             self.filtered_articles = []
             self.rendered_count = 0
             self.search_index = {}
@@ -1349,7 +1385,9 @@ class CarleoneWindow(QMainWindow):
         for article, searchable_text in self.search_index.get((self.server.currentData(), self.mode), []):
             if self.suspect_button.isChecked() and article_key(article) not in self.selected_suspect_keys():
                 continue
-            if (self.mode == "rules" and self.topic.currentData()
+            if self.favorites_button.isChecked() and article_key(article) not in self.selected_favorite_keys():
+                continue
+            if (self.topic.currentData()
                     and article.get("topic_id", article["title"]) != self.topic.currentData()):
                 continue
             if (
@@ -1365,6 +1403,7 @@ class CarleoneWindow(QMainWindow):
             matches.append(article)
 
         matches.sort(key=lambda article: (
+            law_punishment_priority(article) if self.mode == 'laws' else 0,
             article_search_priority(article, number),
             law_scores.get(id(article), 0) if law_scores is not None else 0,
             self.mode == "rules" and article["number"].startswith("Справка"),
@@ -1389,6 +1428,8 @@ class CarleoneWindow(QMainWindow):
             message = tr("Ничего не найдено. Измени запрос или выбери «Все».")
             if self.suspect_button.isChecked() and not self.selected_suspect_keys():
                 message = tr('Список нарушений пуст. Добавь правила кнопкой «+ В нарушения» в разделе правил.' if self.mode == 'rules' else 'Список нарушений пуст. Добавь статьи кнопкой «+ В нарушения» в разделе законов.')
+            if self.favorites_button.isChecked() and not self.selected_favorite_keys():
+                message = tr('В избранном пока ничего нет. Нажми звёздочку рядом со статьёй или правилом.')
             if not records:
                 section = tr("Правила" if self.mode == "rules" else "Законы")
                 message = tr('{section} для сервера {server} ещё не добавлены.', section=section, server=self.server.currentText())
@@ -1403,6 +1444,7 @@ class CarleoneWindow(QMainWindow):
 
         self.update_result_status()
         self.update_suspect_controls()
+        self.update_favorite_controls()
         section = tr("Правила сервера" if self.mode == "rules" else "Кодексы")
         self.note.setText(f"{self.server.currentText()} · {section}")
         self.scroll.verticalScrollBar().setValue(0)
@@ -1413,7 +1455,17 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    window = CarleoneWindow()
-    window.show()
+    from discord_access import load_config, AccountManager
+    try:
+        access_config = load_config(Path(__file__).resolve().parent)
+    except (OSError, ValueError) as error:
+        QMessageBox.critical(None, 'Аккаунт хелпера', str(error))
+        sys.exit(1)
+    if access_config['enabled']:
+        app.discord_access_manager = AccountManager(app, access_config, Path(__file__).resolve().parent, CarleoneWindow)
+        app.discord_access_manager.start()
+    else:
+        window = CarleoneWindow()
+        window.show()
 
     sys.exit(app.exec())

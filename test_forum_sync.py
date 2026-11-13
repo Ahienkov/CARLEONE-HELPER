@@ -18,6 +18,17 @@ from main import CarleoneWindow, SERVER_DATA
 
 
 class SyncTests(unittest.TestCase):
+    def test_forbidden_forum_reports_access_restriction(self):
+        session = Mock()
+        session.headers = {}
+        session.get.return_value.status_code = 403
+        sync = ForumSync(self.root, session=session)
+        with self.assertRaises(forum_sync.ForumAccessError):
+            sync.run()
+        for name in SNAPSHOTS:
+            self.assertEqual((self.root / name).read_bytes(), self.original[name])
+        session.close.assert_called_once()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=ROOT)
         self.root = Path(self.temp.name)
@@ -124,6 +135,26 @@ class UpdateUiTests(unittest.TestCase):
             manager.deleteLater()
             window.close()
             window.deleteLater()
+
+    def test_access_restriction_keeps_local_data_and_does_not_claim_freshness(self):
+        manager = ForumUpdates(self.app)
+        try:
+            with patch('forum_updates.check_for_update', return_value={'state': 'current'}), \
+                 patch('forum_updates.ForumSync') as sync, \
+                 patch.object(manager, 'finish') as finish:
+                sync.return_value.run.side_effect = forum_sync.ForumAccessError('HTTP 403')
+                manager.completed.connect(finish)
+                manager.run_check()
+                result = finish.call_args.args[0]
+            self.assertEqual(result['access_required'], 'HTTP 403')
+            manager.finish(result)
+            self.assertEqual(manager.text, 'Форум: доступ ограничен')
+            self.assertIn('сохранённая база', manager.detail)
+            self.assertIn('не проверена', manager.detail)
+        finally:
+            manager.stop()
+            self.app.aboutToQuit.disconnect(manager.stop)
+            manager.deleteLater()
 
     def test_apply_new_data_keeps_query_category_and_visibility(self):
         window = CarleoneWindow(copy.deepcopy(SERVER_DATA))

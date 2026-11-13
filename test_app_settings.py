@@ -53,8 +53,8 @@ class SettingsTests(unittest.TestCase):
         window.settings_store = self.store
         try:
             window.apply_preferences({**DEFAULTS, 'background_opacity': 80, 'always_on_top': False, 'hotkey': 'disabled'})
-            self.assertIn('rgba(18, 22, 25, 204)', window.styleSheet())
-            self.assertIn('background-color: #1b2229', window.styleSheet())
+            self.assertIn('rgba(19, 19, 19, 204)', window.styleSheet())
+            self.assertIn('background-color: #171717', window.styleSheet())
             self.assertFalse(window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
             self.assertIn('отключена', window.hotkey_hint.text())
             self.assertEqual(self.store.load()['background_opacity'], 80)

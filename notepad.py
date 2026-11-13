@@ -1,11 +1,14 @@
 """A local tabbed notebook stored outside application release packages."""
 import json
 
-from PySide6.QtCore import QSettings, Qt, QSignalBlocker
+from PySide6.QtCore import QSettings, Qt, QSignalBlocker, QSize
 from PySide6.QtWidgets import (QHBoxLayout, QInputDialog, QLabel, QMessageBox,
-                               QPlainTextEdit, QPushButton, QTabBar, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QPushButton, QToolButton, QTabBar, QVBoxLayout, QWidget)
+
+from dialog_chrome import MessageBox as QMessageBox, InputDialog as QInputDialog
 
 from i18n import tr
+from ui_icons import line_icon
 
 
 class NotepadStore:
@@ -40,6 +43,16 @@ class NotepadStore:
             raise OSError(tr('Не удалось сохранить блокнот. Текст остаётся в редакторе.'))
 
 
+class NoteTabBar(QTabBar):
+    """Scroll complete tab labels instead of squeezing every tab to an ellipsis."""
+    def tabSizeHint(self, index):
+        text_width = self.fontMetrics().horizontalAdvance(self.tabText(index))
+        return QSize(max(146, text_width + 64), 42)
+
+    def minimumTabSizeHint(self, index):
+        return self.tabSizeHint(index)
+
+
 class NotepadPanel(QWidget):
     def __init__(self, store, parent=None):
         super().__init__(parent)
@@ -53,29 +66,41 @@ class NotepadPanel(QWidget):
         header.addWidget(self.title)
         header.addStretch()
         self.add_button = QPushButton()
+        self.add_button.setObjectName('noteAdd')
         self.add_button.clicked.connect(self.add_tab)
         header.addWidget(self.add_button)
         self.save_button = QPushButton()
+        self.save_button.setObjectName('noteSave')
         self.save_button.clicked.connect(self.save)
         header.addWidget(self.save_button)
         layout.addLayout(header)
-        self.tabs = QTabBar()
+        self.tabs = NoteTabBar()
+        self.tabs.setDrawBase(False)
         self.tabs.setExpanding(False)
         self.tabs.setUsesScrollButtons(True)
-        self.tabs.setTabsClosable(True)
-        self.tabs.setStyleSheet('QTabBar::tab { background: #1b2229; color: #a0a8b1; '
-                               'padding: 9px 12px; border: 1px solid #56616c; } '
-                               'QTabBar::tab:selected { background: #344c61; color: #ffffff; }')
+        self.tabs.setTabsClosable(False)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
+        self.tabs.setStyleSheet('''
+            QTabBar::tab { background: #1a1a1c; color: #93959d;
+                padding: 8px 14px; border: 1px solid #303033; border-radius: 8px;
+                margin-right: 8px; font-size: 12px; }
+            QTabBar::tab:selected { background: #2b271e; color: #e9cf8e; border-color: #5c4e2e; }
+            QTabBar::tab:hover { background: #262628; color: #ededee; }
+            QTabBar QToolButton { background: #202022; border: none; border-radius: 5px; padding: 2px; }
+            QToolButton#noteTabClose { background: transparent; border: none; padding: 0; }
+            QToolButton#noteTabClose:hover { background: transparent; }
+        ''')
         layout.addWidget(self.tabs)
         self.editor = QPlainTextEdit()
         self.editor.setTabChangesFocus(True)
-        self.editor.setStyleSheet('QPlainTextEdit { background: #14181e; color: #e5e7eb; '
-                                 'border: 1px solid #56616c; border-radius: 10px; padding: 14px; '
-                                 'font-size: 16px; selection-background-color: #455c75; }')
+        self.editor.setStyleSheet('QPlainTextEdit { background: #131313; color: #f4f4f4; '
+                                 'border: 1px solid #303030; border-radius: 10px; padding: 14px; '
+                                 'font-size: 14px; selection-background-color: #615125; }')
         layout.addWidget(self.editor, 1)
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.TextFormat.PlainText)
+        self.status.setStyleSheet('color: #73757d; font-size: 11px;')
         layout.addWidget(self.status)
         self.retranslate_ui()
         try:
@@ -94,6 +119,7 @@ class NotepadPanel(QWidget):
 
     def retranslate_ui(self):
         self.title.setText(tr('Блокнот'))
+        self.title.hide()
         self.save_button.setText(tr('Сохранить'))
         self.add_button.setText(tr('+ Вкладка'))
         self.tabs.setAccessibleName(tr('Вкладки блокнота'))
@@ -116,7 +142,20 @@ class NotepadPanel(QWidget):
                 self.tabs.addTab(tab['title'])
             self.tabs.setCurrentIndex(self.document['active'])
             self.editor.setPlainText(self.document['tabs'][self.document['active']]['text'])
-        self.tabs.setTabsClosable(len(self.document['tabs']) > 1)
+        if len(self.document['tabs']) > 1:
+            for index, tab in enumerate(self.document['tabs']):
+                close = QToolButton(self.tabs)
+                close.setObjectName('noteTabClose')
+                close.setAutoRaise(True)
+                close.setIcon(line_icon('close', 12))
+                close.setFixedSize(20, 20)
+                close.setCursor(Qt.CursorShape.PointingHandCursor)
+                close.setAccessibleName(tr('Удалить вкладку') + ': ' + tab['title'])
+                close.setToolTip(tr('Удалить вкладку'))
+                close.clicked.connect(lambda _checked=False, index=index: self.tabs.tabCloseRequested.emit(index))
+                self.tabs.setTabButton(index, QTabBar.ButtonPosition.RightSide, close)
+        for index, tab in enumerate(self.document['tabs']):
+            self.tabs.setTabToolTip(index, tab['title'])
 
     def add_tab(self):
         titles = {tab['title'] for tab in self.document['tabs']}
